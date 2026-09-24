@@ -124,6 +124,7 @@ function OperationsDashboard() {
   const [railCollapsed, setRailCollapsed] = useState(false);
 
   const loadData = useCallback(async (quiet = false) => {
+    if (typeof window === "undefined") return;
     const supabase = getSupabase();
     if (!supabase) return;
     if (!quiet) setRefreshing(true);
@@ -171,6 +172,7 @@ function OperationsDashboard() {
   }, [t]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const initialLoad = window.setTimeout(() => void loadData(true), 0);
     const supabase = getSupabase();
     if (!supabase) return;
@@ -200,6 +202,7 @@ function OperationsDashboard() {
   }, [loadData, t]);
 
   useEffect(() => {
+    if (typeof document === "undefined") return;
     const context = document.modelContext;
     if (!context?.registerTool) return;
     const lifecycle = new AbortController();
@@ -228,11 +231,11 @@ function OperationsDashboard() {
 
   const signOut = async () => {
     await getSupabase()?.auth.signOut();
-    window.location.href = "/login";
+    if (typeof window !== "undefined") window.location.href = "/login";
   };
 
   const syncNow = async () => {
-    if (!navigator.onLine) return toast.error(t("Nema internet veze.", "No internet connection."));
+    if (typeof navigator === "undefined" || !navigator.onLine) return toast.error(t("Nema internet veze.", "No internet connection."));
     setRefreshing(true);
     const result = await flushQueue();
     await loadData(true);
@@ -335,7 +338,7 @@ function ExpensesWorkspace({ profile, expenses, onSaved }: { profile: Profile; e
     const payload: Record<string, unknown> = { id, user_id: profile.id, origin: String(form.get("origin") ?? "").trim(), destination: String(form.get("destination") ?? "").trim(), travel_date: String(form.get("travel_date") ?? ""), transport_type: String(form.get("transport_type") ?? "bus"), amount_rsd: Number(form.get("amount_rsd")), notes: String(form.get("notes") ?? "").trim() || null, receipt_path: path, status: "pending_review" };
     setBusy(true);
     const supabase = getSupabase();
-    if (!supabase || !navigator.onLine) {
+    if (!supabase || typeof navigator === "undefined" || !navigator.onLine) {
       await enqueue("travel_expenses", { ...payload, receipt_path: null }, path && file instanceof File ? { bucket: "expense-receipts", path, field: "receipt_path", file } : undefined);
       await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "expense_submitted", entity_type: "travel_expense", entity_id: id, metadata: {} });
       toast.success(t("Trošak je sačuvan i čeka sinhronizaciju.", "Expense saved and queued for sync."));
@@ -365,7 +368,7 @@ function VisitDialog({ open, task, profile, onClose, onSaved }: { open: boolean;
     const payload = { id, canvasser_id: profile.id, task_id: task?.id ?? null, latitude, longitude, address: String(form.get("address") ?? "").trim() || null, city_village: String(form.get("city_village") ?? "").trim() || profile.assigned_region || "Srbija", status: String(form.get("status") ?? "visited_neutral"), notes: String(form.get("notes") ?? "").trim() || null, follow_up_requested: form.get("follow_up") === "yes", completed_at: new Date().toISOString() };
     setBusy(true);
     const supabase = getSupabase();
-    if (!supabase || !navigator.onLine) {
+    if (!supabase || typeof navigator === "undefined" || !navigator.onLine) {
       await enqueue("visits", payload);
       await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "visit_completed", entity_type: "visit", entity_id: id, metadata: { task_id: task?.id ?? null } });
       toast.success(t("Poseta je sačuvana u Selo režimu.", "Visit saved in Village mode."));
@@ -396,7 +399,7 @@ function IncidentDialog({ open, profile, onClose, onSaved }: { open: boolean; pr
     const payload: Record<string, unknown> = { id, reporter_id: profile.id, polling_station_number: String(form.get("polling_station_number") ?? "").trim(), municipality: String(form.get("municipality") ?? "").trim(), title: String(form.get("title") ?? "").trim(), description: String(form.get("description") ?? "").trim(), severity: String(form.get("severity") ?? "medium"), status: "pending_review", media_urls: [], latitude: position?.latitude ?? null, longitude: position?.longitude ?? null };
     setBusy(true);
     const supabase = getSupabase();
-    if (!supabase || !navigator.onLine) {
+    if (!supabase || typeof navigator === "undefined" || !navigator.onLine) {
       await enqueue("incidents", payload, path && file instanceof File ? { bucket: "incident-media", path, field: "media_urls", file } : undefined);
       await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "incident_reported", entity_type: "incident", entity_id: id, metadata: { severity: payload.severity } });
       toast.success(t("Prijava je sačuvana i čeka mrežu.", "Report saved and waiting for a connection."));
@@ -472,7 +475,7 @@ function safeFileName(value: string) {
 }
 
 function currentPosition(): Promise<{ latitude: number; longitude: number } | null> {
-  if (!("geolocation" in navigator)) return Promise.resolve(null);
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return Promise.resolve(null);
   return new Promise((resolve) => navigator.geolocation.getCurrentPosition(
     (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
     () => resolve(null),
