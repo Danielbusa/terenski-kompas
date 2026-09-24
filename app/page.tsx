@@ -11,6 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthGate } from "@/components/auth-gate";
+import { getSupabase } from "@/lib/supabase/client";
+import { enqueue } from "@/lib/offline-queue";
 
 type Role = "field" | "watcher" | "hq";
 type Modal = "visit" | "recruit" | "incident" | "donation" | null;
@@ -111,17 +114,55 @@ function EntryDialog({ modal, close }: { modal: Modal; close: () => void }) {
     donation: { title: "Generiši IPS QR", desc: "Donator skenira kod u aplikaciji svoje banke.", action: "Generiši kod" },
   } as const)[modal as Exclude<Modal, null>], [modal]);
   if (!config) return null;
-  const submit = () => { close(); toast.success(modal === "donation" ? "IPS QR kod je spreman" : "Sačuvano i dodato u red za sinhronizaciju"); };
-  return <Dialog open={Boolean(modal)} onOpenChange={(v) => !v && close()}><DialogContent className="entry-dialog"><DialogHeader><div className="dialog-mark">{modal === "incident" ? <AlertTriangle /> : modal === "donation" ? <QrCode /> : modal === "recruit" ? <UserPlus /> : <MapPin />}</div><DialogTitle>{config.title}</DialogTitle><DialogDescription>{config.desc}</DialogDescription></DialogHeader>
-    {modal === "visit" && <div className="form-grid"><div className="form-wide"><Label>Adresa</Label><Input defaultValue="Bulevar oslobođenja 31" /></div><div><Label>Status</Label><Select defaultValue="support"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="support">Podržava</SelectItem><SelectItem value="neutral">Neodlučan</SelectItem><SelectItem value="away">Nije kod kuće</SelectItem><SelectItem value="refused">Odbio razgovor</SelectItem></SelectContent></Select></div><div><Label>Praćenje</Label><Select defaultValue="no"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="no">Nije potrebno</SelectItem><SelectItem value="yes">Pozvati ponovo</SelectItem></SelectContent></Select></div><div className="form-wide"><Label>Beleška</Label><Textarea placeholder="Kratka beleška sa razgovora…" /></div></div>}
-    {modal === "recruit" && <div className="form-grid"><div><Label>Ime i prezime</Label><Input placeholder="Jovana Petrović" /></div><div><Label>Telefon</Label><Input placeholder="+381 6…" /></div><div className="form-wide"><Label>Mesto</Label><Input placeholder="Novi Sad" /></div><button className="qr-option" onClick={() => toast("QR kod je prikazan na ekranu")}><QrCode /><span><b>Prikaži QR za prijavu</b><small>Volonter unosi svoje podatke</small></span><ChevronRight /></button></div>}
-    {modal === "incident" && <div className="form-grid"><div><Label>Biračko mesto</Label><Input defaultValue="BM 17" /></div><div><Label>Ozbiljnost</Label><Select defaultValue="medium"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Niska</SelectItem><SelectItem value="medium">Srednja</SelectItem><SelectItem value="critical">Kritična</SelectItem></SelectContent></Select></div><div className="form-wide"><Label>Naslov</Label><Input placeholder="Šta se dogodilo?" /></div><div className="form-wide"><Label>Opis</Label><Textarea placeholder="Opiši događaj što preciznije…" /></div><button className="upload-option"><Camera /><span><b>Dodaj fotografiju ili video</b><small>Do 5 priloga · najviše 50 MB</small></span></button></div>}
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (modal === "donation") {
+      window.location.href = "/donate";
+      return;
+    }
+    const data = new FormData(event.currentTarget);
+    const supabase = getSupabase();
+    const session = await supabase?.auth.getSession();
+    const userId = session?.data.session?.user.id ?? null;
+    let table: "canvassing_points" | "recruits" | "incidents" = "canvassing_points";
+    let payload: Record<string, unknown> = {};
+    if (modal === "visit") {
+      payload = { canvasser_id: userId, latitude: 45.2671, longitude: 19.8335, address_street: String(data.get("address") ?? ""), city_village: "Novi Sad", status: String(data.get("status") ?? "visited_neutral"), notes: String(data.get("notes") ?? ""), follow_up_requested: data.get("followup") === "yes" };
+    } else if (modal === "recruit") {
+      table = "recruits";
+      payload = { recruiter_id: userId, full_name: String(data.get("full_name") ?? ""), phone_number: String(data.get("phone_number") ?? ""), city_village: String(data.get("city_village") ?? ""), interested_in_poll_watching: false, source: "field" };
+    } else if (modal === "incident") {
+      table = "incidents";
+      const media = data.get("media");
+      const mediaUrls: string[] = [];
+      if (supabase && navigator.onLine && media instanceof File && media.size) {
+        const path = `${userId}/${crypto.randomUUID()}-${media.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+        const upload = await supabase.storage.from("incident-media").upload(path, media);
+        if (upload.error) return toast.error("Prilog nije otpremljen. Proveri veličinu i pokušaj ponovo.");
+        mediaUrls.push(upload.data.path);
+      }
+      payload = { reporter_id: userId, polling_station_number: String(data.get("polling_station") ?? ""), municipality: "Novi Sad", title: String(data.get("title") ?? ""), description: String(data.get("description") ?? ""), severity: String(data.get("severity") ?? "medium"), media_urls: mediaUrls, latitude: 45.2671, longitude: 19.8335 };
+    }
+    if (!supabase || !navigator.onLine) {
+      await enqueue(table, payload);
+      close();
+      toast.success("Sačuvano na uređaju. Sinhronizovaće se kada se mreža vrati.");
+      return;
+    }
+    const result = await supabase.from(table).insert(payload);
+    if (result.error) toast.error("Podatak nije sačuvan. Proveri pristup i pokušaj ponovo.");
+    else { close(); toast.success("Sačuvano i sinhronizovano."); }
+  };
+  return <Dialog open={Boolean(modal)} onOpenChange={(v) => !v && close()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><div className="dialog-mark">{modal === "incident" ? <AlertTriangle /> : modal === "donation" ? <QrCode /> : modal === "recruit" ? <UserPlus /> : <MapPin />}</div><DialogTitle>{config.title}</DialogTitle><DialogDescription>{config.desc}</DialogDescription></DialogHeader>
+    {modal === "visit" && <div className="form-grid"><div className="form-wide"><Label>Adresa</Label><Input name="address" defaultValue="Bulevar oslobođenja 31" required /></div><div><Label>Status</Label><Select name="status" defaultValue="visited_supporter"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="visited_supporter">Podržava</SelectItem><SelectItem value="visited_neutral">Neodlučan</SelectItem><SelectItem value="not_home">Nije kod kuće</SelectItem><SelectItem value="refused">Odbio razgovor</SelectItem></SelectContent></Select></div><div><Label>Praćenje</Label><Select name="followup" defaultValue="no"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="no">Nije potrebno</SelectItem><SelectItem value="yes">Pozvati ponovo</SelectItem></SelectContent></Select></div><div className="form-wide"><Label>Beleška</Label><Textarea name="notes" placeholder="Kratka beleška sa razgovora…" /></div></div>}
+    {modal === "recruit" && <div className="form-grid"><div><Label>Ime i prezime</Label><Input name="full_name" placeholder="Jovana Petrović" required /></div><div><Label>Telefon</Label><Input name="phone_number" placeholder="+381 6…" required /></div><div className="form-wide"><Label>Mesto</Label><Input name="city_village" placeholder="Novi Sad" required /></div><a className="qr-option" href="/join" target="_blank"><QrCode /><span><b>Otvori javnu prijavu</b><small>Volonter unosi svoje podatke</small></span><ChevronRight /></a></div>}
+    {modal === "incident" && <div className="form-grid"><div><Label>Biračko mesto</Label><Input name="polling_station" defaultValue="BM 17" required /></div><div><Label>Ozbiljnost</Label><Select name="severity" defaultValue="medium"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Niska</SelectItem><SelectItem value="medium">Srednja</SelectItem><SelectItem value="critical">Kritična</SelectItem></SelectContent></Select></div><div className="form-wide"><Label>Naslov</Label><Input name="title" placeholder="Šta se dogodilo?" required /></div><div className="form-wide"><Label>Opis</Label><Textarea name="description" placeholder="Opiši događaj što preciznije…" required /></div><label className="upload-option"><Camera /><span><b>Dodaj fotografiju ili video</b><small>Jedan prilog · najviše 50 MB</small></span><Input name="media" type="file" accept="image/*,video/*" className="sr-only" /></label></div>}
     {modal === "donation" && <div className="form-grid"><div><Label>Iznos (RSD)</Label><Input type="number" defaultValue="1000" /></div><div><Label>Ime donatora</Label><Input placeholder="Anonimno" /></div><div className="form-wide donation-note"><ShieldCheck /><span><b>Bezbedno IPS plaćanje</b><small>Aplikacija ne čuva podatke platne kartice.</small></span></div></div>}
-    <DialogFooter><Button variant="outline" onClick={close}>Otkaži</Button><Button onClick={submit}>{config.action}<ArrowRight /></Button></DialogFooter>
-  </DialogContent></Dialog>;
+    <DialogFooter><Button type="button" variant="outline" onClick={close}>Otkaži</Button><Button type="submit">{config.action}<ArrowRight /></Button></DialogFooter>
+  </form></DialogContent></Dialog>;
 }
 
-export default function HomePage() {
+function Dashboard() {
   const [role, setRole] = useState<Role>("field");
   const [modal, setModal] = useState<Modal>(null);
   const [online, setOnline] = useState(true);
@@ -164,9 +205,17 @@ export default function HomePage() {
     }, { signal: lifecycle.signal })).catch(() => undefined);
     return () => lifecycle.abort();
   }, []);
-  return <div className="app-shell"><aside className="desktop-rail"><div className="brand-mark"><Compass /></div><nav aria-label="Glavna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")} title="Teren"><Map /></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")} title="Kontrola"><ShieldCheck /></button><button className={role === "hq" ? "active" : ""} onClick={() => setRole("hq")} title="Centrala"><BarChart3 /></button></nav><button className="avatar-button">MJ</button></aside>
+  const signOut = async () => {
+    await getSupabase()?.auth.signOut();
+    window.location.href = "/login";
+  };
+  return <div className="app-shell"><aside className="desktop-rail"><div className="brand-mark"><Compass /></div><nav aria-label="Glavna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")} title="Teren"><Map /></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")} title="Kontrola"><ShieldCheck /></button><button className={role === "hq" ? "active" : ""} onClick={() => setRole("hq")} title="Centrala"><BarChart3 /></button></nav><button className="avatar-button" title="Odjavi se" onClick={signOut}>MJ</button></aside>
     <main className="app-main"><header className="topbar"><div className="brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>STUDENTSKA LISTA · SUSS</small></div></div><Tabs value={role} onValueChange={(v) => setRole(v as Role)} className="role-tabs"><TabsList><TabsTrigger value="field">Teren</TabsTrigger><TabsTrigger value="watcher">Kontrolor</TabsTrigger><TabsTrigger value="hq">Centrala</TabsTrigger></TabsList><TabsContent value="field" /><TabsContent value="watcher" /><TabsContent value="hq" /></Tabs><div className="top-actions"><span className={online ? "online" : "offline"}>{online ? <Signal /> : <CloudOff />}{online ? "Na mreži" : "Rad van mreže"}</span><button className="round-btn" aria-label="Obaveštenja"><Bell /><i /></button><button className="menu-btn" aria-label="Meni"><Menu /></button></div></header>
       <div className="content-wrap">{role === "field" && <FieldView open={setModal} />}{role === "watcher" && <WatcherView open={setModal} />}{role === "hq" && <HQView />}</div>
       <nav className="mobile-nav" aria-label="Mobilna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")}><Map /><span>Teren</span></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")}><ShieldCheck /><span>Kontrola</span></button><button className="mobile-add" onClick={() => setModal(role === "watcher" ? "incident" : "visit")}><Plus /></button><button className={role === "hq" ? "active" : ""} onClick={() => setRole("hq")}><BarChart3 /><span>Centrala</span></button><button onClick={() => toast("Profil je spreman za pregled")}><Users /><span>Profil</span></button></nav>
     </main><EntryDialog modal={modal} close={() => setModal(null)} /><Toaster richColors position="top-center" /></div>;
+}
+
+export default function HomePage() {
+  return <AuthGate><Dashboard /></AuthGate>;
 }
