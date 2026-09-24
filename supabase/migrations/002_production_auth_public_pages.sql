@@ -7,7 +7,7 @@ returns trigger language plpgsql security definer set search_path = public
 as $$
 begin
   insert into public.profiles (id, full_name, email, phone_number, role)
-  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)), new.email, new.phone, 'canvasser')
+  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1), new.phone, 'Volunteer'), new.email, new.phone, 'canvasser')
   on conflict (id) do update set email = excluded.email;
   return new;
 end;
@@ -20,7 +20,7 @@ for each row execute procedure public.handle_new_user();
 create policy "profiles update own" on public.profiles for update
 using (auth.uid() = id) with check (auth.uid() = id);
 
-create policy "public recruit signup" on public.recruits for insert to anon
+create policy "public recruit signup" on public.recruits for insert to anon, authenticated
 with check (recruiter_id is null and source = 'public_join');
 
 create policy "coordinators read recruits" on public.recruits for select

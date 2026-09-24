@@ -12,7 +12,12 @@ alter table public.canvassing_points enable row level security;
 alter table public.recruits enable row level security;
 alter table public.incidents enable row level security;
 alter table public.donations enable row level security;
-create policy "profiles read own or admin" on public.profiles for select using (auth.uid()=id or exists(select 1 from public.profiles p where p.id=auth.uid() and p.role in ('admin','coordinator')));
+create or replace function public.is_admin_or_coordinator()
+returns boolean language sql stable security definer set search_path=public
+as $$ select exists(select 1 from public.profiles p where p.id=auth.uid() and p.role in ('admin','coordinator')) $$;
+revoke all on function public.is_admin_or_coordinator() from public;
+grant execute on function public.is_admin_or_coordinator() to authenticated;
+create policy "profiles read own or admin" on public.profiles for select using (auth.uid()=id or public.is_admin_or_coordinator());
 create policy "field staff insert points" on public.canvassing_points for insert with check (auth.uid()=canvasser_id);
 create policy "field staff read own points" on public.canvassing_points for select using (auth.uid()=canvasser_id or exists(select 1 from public.profiles p where p.id=auth.uid() and p.role in ('admin','coordinator')));
 create policy "recruiters insert recruits" on public.recruits for insert with check (auth.uid()=recruiter_id);

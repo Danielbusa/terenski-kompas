@@ -165,9 +165,8 @@ function EntryDialog({ modal, close }: { modal: Modal; close: () => void }) {
 function Dashboard() {
   const [role, setRole] = useState<Role>("field");
   const [modal, setModal] = useState<Modal>(null);
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
   useEffect(() => {
-    setOnline(navigator.onLine);
     const on = () => setOnline(true); const off = () => setOnline(false);
     window.addEventListener("online", on); window.addEventListener("offline", off);
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);

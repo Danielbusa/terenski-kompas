@@ -9,12 +9,11 @@ import { flushQueue } from "@/lib/offline-queue";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(() => !isSupabaseConfigured);
 
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) {
-      setReady(true);
       return;
     }
     void supabase.auth.getSession().then(({ data }) => {
