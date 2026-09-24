@@ -211,6 +211,12 @@ function OperationsDashboard() {
     return () => lifecycle.abort();
   }, [t]);
 
+  useEffect(() => {
+    if (!profile) return;
+    const allowed = roleWorkspaces(profile.role);
+    if (!allowed.includes(workspace)) setWorkspace(allowed[0]);
+  }, [profile, workspace]);
+
   const signOut = async () => {
     await getSupabase()?.auth.signOut();
     window.location.href = "/login";
