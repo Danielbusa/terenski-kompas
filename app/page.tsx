@@ -15,7 +15,7 @@ import { AuthGate } from "@/components/auth-gate";
 import { getSupabase } from "@/lib/supabase/client";
 import { enqueue } from "@/lib/offline-queue";
 
-type Role = "field" | "watcher" | "hq";
+type Role = "field" | "watcher";
 type Modal = "visit" | "recruit" | "incident" | "donation" | null;
 
 declare global {
@@ -184,7 +184,11 @@ function Dashboard() {
       annotations: { readOnlyHint: true, untrustedContentHint: false },
       execute(input) {
         const value = (input as { role?: string })?.role;
-        if (value !== "field" && value !== "watcher" && value !== "hq") throw new Error("Invalid role");
+        if (value === "hq") {
+          window.location.href = "/admin";
+          return { role: value, status: "opening_admin_portal" };
+        }
+        if (value !== "field" && value !== "watcher") throw new Error("Invalid role");
         setRole(value);
         return { role: value, status: "visible" };
       },
@@ -208,10 +212,10 @@ function Dashboard() {
     await getSupabase()?.auth.signOut();
     window.location.href = "/login";
   };
-  return <div className="app-shell"><aside className="desktop-rail"><div className="brand-mark"><Compass /></div><nav aria-label="Glavna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")} title="Teren"><Map /></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")} title="Kontrola"><ShieldCheck /></button><button className={role === "hq" ? "active" : ""} onClick={() => setRole("hq")} title="Centrala"><BarChart3 /></button></nav><button className="avatar-button" title="Odjavi se" onClick={signOut}>MJ</button></aside>
-    <main className="app-main"><header className="topbar"><div className="brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>STUDENTSKA LISTA · SUSS</small></div></div><Tabs value={role} onValueChange={(v) => setRole(v as Role)} className="role-tabs"><TabsList><TabsTrigger value="field">Teren</TabsTrigger><TabsTrigger value="watcher">Kontrolor</TabsTrigger><TabsTrigger value="hq">Centrala</TabsTrigger></TabsList><TabsContent value="field" /><TabsContent value="watcher" /><TabsContent value="hq" /></Tabs><div className="top-actions"><span className={online ? "online" : "offline"}>{online ? <Signal /> : <CloudOff />}{online ? "Na mreži" : "Rad van mreže"}</span><button className="round-btn" aria-label="Obaveštenja"><Bell /><i /></button><button className="menu-btn" aria-label="Meni"><Menu /></button></div></header>
-      <div className="content-wrap">{role === "field" && <FieldView open={setModal} />}{role === "watcher" && <WatcherView open={setModal} />}{role === "hq" && <HQView />}</div>
-      <nav className="mobile-nav" aria-label="Mobilna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")}><Map /><span>Teren</span></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")}><ShieldCheck /><span>Kontrola</span></button><button className="mobile-add" onClick={() => setModal(role === "watcher" ? "incident" : "visit")}><Plus /></button><button className={role === "hq" ? "active" : ""} onClick={() => setRole("hq")}><BarChart3 /><span>Centrala</span></button><button onClick={() => toast("Profil je spreman za pregled")}><Users /><span>Profil</span></button></nav>
+  return <div className="app-shell"><aside className="desktop-rail"><div className="brand-mark"><Compass /></div><nav aria-label="Glavna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")} title="Teren"><Map /></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")} title="Kontrola"><ShieldCheck /></button><a href="/admin" title="Admin portal"><BarChart3 /></a></nav><button className="avatar-button" title="Odjavi se" onClick={signOut}>MJ</button></aside>
+    <main className="app-main"><header className="topbar"><div className="brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>STUDENTSKA LISTA · SUSS</small></div></div><Tabs value={role} onValueChange={(v) => setRole(v as Role)} className="role-tabs"><TabsList><TabsTrigger value="field">Teren</TabsTrigger><TabsTrigger value="watcher">Kontrolor</TabsTrigger><a href="/admin" className="admin-tab-link">Centrala</a></TabsList><TabsContent value="field" /><TabsContent value="watcher" /></Tabs><div className="top-actions"><span className={online ? "online" : "offline"}>{online ? <Signal /> : <CloudOff />}{online ? "Na mreži" : "Rad van mreže"}</span><button className="round-btn" aria-label="Obaveštenja"><Bell /><i /></button><button className="menu-btn" aria-label="Meni"><Menu /></button></div></header>
+      <div className="content-wrap">{role === "field" && <FieldView open={setModal} />}{role === "watcher" && <WatcherView open={setModal} />}</div>
+      <nav className="mobile-nav" aria-label="Mobilna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")}><Map /><span>Teren</span></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")}><ShieldCheck /><span>Kontrola</span></button><button className="mobile-add" onClick={() => setModal(role === "watcher" ? "incident" : "visit")}><Plus /></button><a href="/admin"><BarChart3 /><span>Centrala</span></a><button onClick={() => toast("Profil je spreman za pregled")}><Users /><span>Profil</span></button></nav>
     </main><EntryDialog modal={modal} close={() => setModal(null)} /><Toaster richColors position="top-center" /></div>;
 }
 
