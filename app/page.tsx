@@ -1,224 +1,459 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowRight, BarChart3, Bell, Camera, ChevronRight, CircleDot, CloudOff, Compass, HandCoins, Home, LocateFixed, Map, MapPin, Menu, Plus, QrCode, Radio, Route, Search, ShieldCheck, Signal, Sparkles, UserPlus, Users } from "lucide-react";
+/* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-location-assign-relative-destination */
+
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, Map, MapPin, Navigation, Plus, Radio, Receipt, RefreshCw, Search, ShieldCheck, Signal, Trophy, WifiOff } from "lucide-react";
 import { toast } from "sonner";
+import { AuthGate } from "@/components/auth-gate";
+import { LanguageToggle, useLanguage } from "@/components/language-provider";
+import { LiveFieldMap, type FieldTask, type VisitMarker } from "@/components/live-field-map";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthGate } from "@/components/auth-gate";
+import { cacheData, enqueue, flushQueue, readCachedData, readQueue } from "@/lib/offline-queue";
 import { getSupabase } from "@/lib/supabase/client";
-import { enqueue } from "@/lib/offline-queue";
-
-type Role = "field" | "watcher";
-type Modal = "visit" | "recruit" | "incident" | "donation" | null;
 
 declare global {
   interface Document {
     modelContext?: {
-      registerTool: (tool: {
-        name: string;
-        title?: string;
-        description: string;
-        inputSchema: object;
-        annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean };
-        execute: (input: unknown) => unknown;
-      }, options?: { signal?: AbortSignal }) => void | Promise<void>;
+      registerTool?: (tool: unknown, options?: { signal?: AbortSignal }) => unknown;
     };
   }
 }
 
-const points = [
-  { x: 18, y: 22, tone: "support", label: "Bulevar oslobođenja 31" },
-  { x: 33, y: 39, tone: "neutral", label: "Novosadska 8" },
-  { x: 53, y: 24, tone: "away", label: "Braće Ribnikar 12" },
-  { x: 67, y: 51, tone: "support", label: "Cara Dušana 47" },
-  { x: 43, y: 67, tone: "hostile", label: "Zmaj Jovina 19" },
-  { x: 79, y: 73, tone: "neutral", label: "Maksima Gorkog 4" },
-];
+type Workspace = "field" | "watcher" | "leaderboard" | "finder" | "expenses";
+type ApprovalStatus = "pending" | "approved" | "rejected";
+type UserRole = "admin" | "coordinator" | "canvasser" | "poll_watcher";
 
-const incidents = [
-  { station: "BM 17", place: "Novi Sad", title: "Fotografisanje glasačkog listića", time: "pre 4 min", severity: "Kritično", status: "Nova" },
-  { station: "BM 23", place: "Petrovaradin", title: "Grupno dovođenje birača", time: "pre 11 min", severity: "Srednje", status: "Provera" },
-  { station: "BM 06", place: "Liman III", title: "Nedostaje kontrolni list", time: "pre 28 min", severity: "Kritično", status: "Pravna služba" },
-];
+type Profile = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  role: UserRole;
+  approval_status: ApprovalStatus;
+  assigned_region: string | null;
+  faculty: string | null;
+};
 
-const volunteers = [
-  { initials: "MJ", name: "Milica Jovanović", region: "Novi Sad · Centar", visits: 31 },
-  { initials: "LN", name: "Luka Nikolić", region: "Petrovaradin", visits: 28 },
-  { initials: "AV", name: "Ana Vasić", region: "Liman", visits: 24 },
-];
+type Incident = {
+  id: string;
+  polling_station_number: string;
+  municipality: string;
+  title: string;
+  description: string;
+  severity: "low" | "medium" | "critical";
+  status: "pending_review" | "verified" | "dismissed" | "escalated_to_legal";
+  created_at: string;
+};
 
-function Stat({ label, value, note }: { label: string; value: string; note: string }) {
-  return <div className="stat-card"><p>{label}</p><strong>{value}</strong><span>{note}</span></div>;
+type Expense = {
+  id: string;
+  origin: string;
+  destination: string;
+  travel_date: string;
+  transport_type: string;
+  amount_rsd: number;
+  receipt_path: string | null;
+  status: "pending_review" | "approved" | "rejected" | "paid";
+  admin_note: string | null;
+  created_at: string;
+};
+
+type LeaderboardRow = {
+  faculty: string;
+  completed_visits: number;
+  active_volunteers: number;
+  follow_ups: number;
+};
+
+type PollingStation = {
+  id: string;
+  station_number: string;
+  municipality: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  coordinator_name: string | null;
+  coordinator_phone: string | null;
+  notes: string | null;
+};
+
+type ActivityLog = {
+  id: string;
+  action: string;
+  entity_type: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type DashboardData = {
+  tasks: FieldTask[];
+  visits: VisitMarker[];
+  incidents: Incident[];
+  expenses: Expense[];
+  leaderboard: LeaderboardRow[];
+  activity: ActivityLog[];
+};
+
+const emptyData: DashboardData = { tasks: [], visits: [], incidents: [], expenses: [], leaderboard: [], activity: [] };
+
+export default function HomePage() {
+  return <AuthGate><OperationsDashboard /></AuthGate>;
 }
 
-function MapCanvas() {
-  const [selected, setSelected] = useState(0);
-  const selectedPoint = points[selected];
-  return <section className="map-shell" aria-label="Mapa obilaska">
-    <div className="map-grid" aria-hidden="true"><span className="road road-a" /><span className="road road-b" /><span className="road road-c" /><span className="river" /></div>
-    <div className="map-topbar"><div className="map-search"><Search /><span>Pretraži ulicu ili naselje</span></div><button className="round-btn" aria-label="Prikaži moju lokaciju" onClick={() => toast.success("Lokacija je osvežena")}><LocateFixed /></button></div>
-    <div className="area-label area-one">STARI GRAD</div><div className="area-label area-two">PODGRAĐE</div>
-    {points.map((point, index) => <button key={point.label} className={`map-point ${point.tone} ${selected === index ? "selected" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} onClick={() => setSelected(index)} aria-label={`${point.label}, ${point.tone}`}><Home /></button>)}
-    <div className="route-line" aria-hidden="true" />
-    <div className="map-card"><div className="map-card-head"><span className={`status-mark ${selectedPoint.tone}`} /><small>Sledeća adresa</small><span>420 m</span></div><h2>{selectedPoint.label}</h2><p>Ulaz sa dvorišne strane · 3 domaćinstva</p><Button onClick={() => toast("Ruta je pokrenuta", { description: "Prati sledeću adresu na mapi." })}><Route /> Pokreni rutu <ArrowRight /></Button></div>
-    <div className="map-legend"><span><i className="support" /> Podržava</span><span><i className="neutral" /> Neodlučan</span><span><i className="away" /> Nije kod kuće</span></div>
-  </section>;
-}
-
-function FieldView({ open }: { open: (modal: Modal) => void }) {
-  return <div className="view-grid field-grid"><div className="main-column">
-    <div className="view-heading"><div><p className="eyebrow">SREDA · NOVI SAD</p><h1>Dobro jutro, Milice.</h1><p>Rejon 04 je spreman. Danas imaš 18 planiranih adresa.</p></div><div className="sync-pill"><Signal /> Sinhronizovano</div></div><MapCanvas />
-  </div><aside className="side-column">
-    <div className="progress-card"><div className="progress-top"><span>Današnji cilj</span><strong>12 / 18</strong></div><div className="progress-track"><span style={{ width: "67%" }} /></div><p><Sparkles /> Još 6 adresa do dnevnog cilja</p></div>
-    <div className="quick-card"><div className="card-title"><div><p className="eyebrow">BRZE AKCIJE</p><h2>Zabeleži na terenu</h2></div><Plus /></div>
-      <button onClick={() => open("visit")}><span className="action-icon orange"><MapPin /></span><span><b>Zabeleži posetu</b><small>Status, beleška i praćenje</small></span><ChevronRight /></button>
-      <button onClick={() => open("recruit")}><span className="action-icon blue"><UserPlus /></span><span><b>Novi volonter</b><small>Prijava preko QR koda</small></span><ChevronRight /></button>
-      <button onClick={() => open("donation")}><span className="action-icon green"><HandCoins /></span><span><b>Mikro-donacija</b><small>Generiši IPS QR kod</small></span><ChevronRight /></button>
-    </div>
-    <div className="activity-card"><div className="card-title"><div><p className="eyebrow">POSLEDNJE</p><h2>Aktivnost u rejonu</h2></div><Activity /></div><div className="feed-row"><i className="support" /><span><b>Bulevar oslobođenja 31</b><small>Podržava · pre 8 min</small></span></div><div className="feed-row"><i className="neutral" /><span><b>Novosadska 8</b><small>Neodlučan · pre 16 min</small></span></div><button className="text-link" onClick={() => toast("Prikazano je svih 12 današnjih aktivnosti")}>Prikaži sve <ArrowRight /></button></div>
-  </aside></div>;
-}
-
-function WatcherView({ open }: { open: (modal: Modal) => void }) {
-  return <div className="watcher-view">
-    <div className="view-heading"><div><p className="eyebrow">IZBORNI DAN · 09:42</p><h1>Kontrola biračkih mesta</h1><p>BM 17 · OŠ „Svetozar Marković Toza“ · Novi Sad</p></div><Button className="danger-btn" onClick={() => open("incident")}><AlertTriangle /> Prijavi incident</Button></div>
-    <div className="watcher-summary"><div className="station-card"><span className="pulse"><Radio /></span><div><small>Status biračkog mesta</small><h2>Otvoreno · bez zastoja</h2><p>Poslednja provera pre 3 minuta</p></div><button onClick={() => toast.success("Status biračkog mesta je potvrđen")}>Potvrdi status</button></div><Stat label="Prijave danas" value="07" note="2 čekaju proveru" /><Stat label="Kritične" value="02" note="Obe prosleđene" /><Stat label="Kontrolori" value="86%" note="Na svojim mestima" /></div>
-    <section className="panel incident-panel"><div className="panel-head"><div><p className="eyebrow">TOK PRIJAVA</p><h2>Incidenti u tvojoj opštini</h2></div><button className="filter-button"><CircleDot /> Sve prijave</button></div><div className="incident-list">
-      {incidents.map((incident, i) => <article key={incident.station}><div className={`severity-icon s${i}`}><AlertTriangle /></div><div className="incident-main"><div className="incident-meta"><span>{incident.station}</span><span>{incident.place}</span><span>{incident.time}</span></div><h3>{incident.title}</h3><p>{i === 0 ? "Birač je zatečen kako fotografiše popunjen listić u kabini." : i === 1 ? "Dva kombija više puta dovoze organizovane grupe birača." : "Kontrolni list nije pronađen pri otvaranju glasačke kutije."}</p></div><div className="incident-state"><span className={i === 0 ? "critical" : "medium"}>{incident.severity}</span><small>{incident.status}</small></div><button className="round-btn" aria-label="Otvori incident" onClick={() => toast(incident.title, { description: "Detalji prijave su otvoreni za proveru." })}><ChevronRight /></button></article>)}
-    </div></section>
-  </div>;
-}
-
-function HQView() {
-  return <div className="hq-view">
-    <div className="view-heading"><div><p className="eyebrow">CENTAR ZA OPERACIJE</p><h1>Pregled kampanje</h1><p>Vojvodina · ažurirano pre nekoliko sekundi</p></div><Select defaultValue="vojvodina"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="vojvodina">Vojvodina</SelectItem><SelectItem value="beograd">Beograd</SelectItem><SelectItem value="srbija">Cela Srbija</SelectItem></SelectContent></Select></div>
-    <div className="stat-grid"><Stat label="Posete danas" value="1.284" note="+18% u odnosu na juče" /><Stat label="Aktivni volonteri" value="342" note="47 trenutno na terenu" /><Stat label="Novi kontakti" value="96" note="21 za kontrolu izbora" /><Stat label="Otvoreni incidenti" value="12" note="3 zahtevaju reakciju" /></div>
-    <div className="hq-grid"><section className="panel heat-panel"><div className="panel-head"><div><p className="eyebrow">POKRIVENOST TERENA</p><h2>Aktivnost po rejonima</h2></div><span className="live-badge"><i /> UŽIVO</span></div><div className="heat-map"><div className="heat h1" /><div className="heat h2" /><div className="heat h3" /><div className="heat h4" /><div className="heat h5" /><div className="heat h6" /><span className="city c1">NOVI SAD<b>78%</b></span><span className="city c2">BEOGRAD<b>64%</b></span><span className="city c3">KRAGUJEVAC<b>51%</b></span></div><div className="heat-footer"><span>Niža aktivnost</span><div><i /><i /><i /><i /><i /></div><span>Viša aktivnost</span></div></section>
-      <section className="panel leaderboard"><div className="panel-head"><div><p className="eyebrow">VOLONTERI</p><h2>Najaktivniji danas</h2></div><Users /></div>{volunteers.map((v, i) => <div className="volunteer" key={v.name}><span className="rank">0{i + 1}</span><span className="avatar">{v.initials}</span><span><b>{v.name}</b><small>{v.region}</small></span><span className="visits"><b>{v.visits}</b><small>poseta</small></span></div>)}<button className="text-link" onClick={() => toast("Otvoren je registar volontera")}>Upravljaj volonterima <ArrowRight /></button></section>
-    </div>
-  </div>;
-}
-
-function EntryDialog({ modal, close }: { modal: Modal; close: () => void }) {
-  const config = useMemo(() => ({
-    visit: { title: "Zabeleži posetu", desc: "Podaci će biti sačuvani i ako trenutno nema mreže.", action: "Sačuvaj posetu" },
-    recruit: { title: "Prijavi novog volontera", desc: "Unesi osnovne podatke ili podeli QR kod za samostalnu prijavu.", action: "Sačuvaj volontera" },
-    incident: { title: "Prijavi incident", desc: "Lokacija i vreme će biti automatski dodati uz prijavu.", action: "Pošalji na proveru" },
-    donation: { title: "Generiši IPS QR", desc: "Donator skenira kod u aplikaciji svoje banke.", action: "Generiši kod" },
-  } as const)[modal as Exclude<Modal, null>], [modal]);
-  if (!config) return null;
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (modal === "donation") {
-      window.location.href = "/donate";
-      return;
-    }
-    const data = new FormData(event.currentTarget);
-    const supabase = getSupabase();
-    const session = await supabase?.auth.getSession();
-    const userId = session?.data.session?.user.id ?? null;
-    let table: "canvassing_points" | "recruits" | "incidents" = "canvassing_points";
-    let payload: Record<string, unknown> = {};
-    if (modal === "visit") {
-      payload = { canvasser_id: userId, latitude: 45.2671, longitude: 19.8335, address_street: String(data.get("address") ?? ""), city_village: "Novi Sad", status: String(data.get("status") ?? "visited_neutral"), notes: String(data.get("notes") ?? ""), follow_up_requested: data.get("followup") === "yes" };
-    } else if (modal === "recruit") {
-      table = "recruits";
-      payload = { recruiter_id: userId, full_name: String(data.get("full_name") ?? ""), phone_number: String(data.get("phone_number") ?? ""), city_village: String(data.get("city_village") ?? ""), interested_in_poll_watching: false, source: "field" };
-    } else if (modal === "incident") {
-      table = "incidents";
-      const media = data.get("media");
-      const mediaUrls: string[] = [];
-      if (supabase && navigator.onLine && media instanceof File && media.size) {
-        const path = `${userId}/${crypto.randomUUID()}-${media.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
-        const upload = await supabase.storage.from("incident-media").upload(path, media);
-        if (upload.error) return toast.error("Prilog nije otpremljen. Proveri veličinu i pokušaj ponovo.");
-        mediaUrls.push(upload.data.path);
-      }
-      payload = { reporter_id: userId, polling_station_number: String(data.get("polling_station") ?? ""), municipality: "Novi Sad", title: String(data.get("title") ?? ""), description: String(data.get("description") ?? ""), severity: String(data.get("severity") ?? "medium"), media_urls: mediaUrls, latitude: 45.2671, longitude: 19.8335 };
-    }
-    if (!supabase || !navigator.onLine) {
-      await enqueue(table, payload);
-      close();
-      toast.success("Sačuvano na uređaju. Sinhronizovaće se kada se mreža vrati.");
-      return;
-    }
-    const result = await supabase.from(table).insert(payload);
-    if (result.error) toast.error("Podatak nije sačuvan. Proveri pristup i pokušaj ponovo.");
-    else { close(); toast.success("Sačuvano i sinhronizovano."); }
-  };
-  return <Dialog open={Boolean(modal)} onOpenChange={(v) => !v && close()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><div className="dialog-mark">{modal === "incident" ? <AlertTriangle /> : modal === "donation" ? <QrCode /> : modal === "recruit" ? <UserPlus /> : <MapPin />}</div><DialogTitle>{config.title}</DialogTitle><DialogDescription>{config.desc}</DialogDescription></DialogHeader>
-    {modal === "visit" && <div className="form-grid"><div className="form-wide"><Label>Adresa</Label><Input name="address" defaultValue="Bulevar oslobođenja 31" required /></div><div><Label>Status</Label><Select name="status" defaultValue="visited_supporter"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="visited_supporter">Podržava</SelectItem><SelectItem value="visited_neutral">Neodlučan</SelectItem><SelectItem value="not_home">Nije kod kuće</SelectItem><SelectItem value="refused">Odbio razgovor</SelectItem></SelectContent></Select></div><div><Label>Praćenje</Label><Select name="followup" defaultValue="no"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="no">Nije potrebno</SelectItem><SelectItem value="yes">Pozvati ponovo</SelectItem></SelectContent></Select></div><div className="form-wide"><Label>Beleška</Label><Textarea name="notes" placeholder="Kratka beleška sa razgovora…" /></div></div>}
-    {modal === "recruit" && <div className="form-grid"><div><Label>Ime i prezime</Label><Input name="full_name" placeholder="Jovana Petrović" required /></div><div><Label>Telefon</Label><Input name="phone_number" placeholder="+381 6…" required /></div><div className="form-wide"><Label>Mesto</Label><Input name="city_village" placeholder="Novi Sad" required /></div><a className="qr-option" href="/join" target="_blank"><QrCode /><span><b>Otvori javnu prijavu</b><small>Volonter unosi svoje podatke</small></span><ChevronRight /></a></div>}
-    {modal === "incident" && <div className="form-grid"><div><Label>Biračko mesto</Label><Input name="polling_station" defaultValue="BM 17" required /></div><div><Label>Ozbiljnost</Label><Select name="severity" defaultValue="medium"><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Niska</SelectItem><SelectItem value="medium">Srednja</SelectItem><SelectItem value="critical">Kritična</SelectItem></SelectContent></Select></div><div className="form-wide"><Label>Naslov</Label><Input name="title" placeholder="Šta se dogodilo?" required /></div><div className="form-wide"><Label>Opis</Label><Textarea name="description" placeholder="Opiši događaj što preciznije…" required /></div><label className="upload-option"><Camera /><span><b>Dodaj fotografiju ili video</b><small>Jedan prilog · najviše 50 MB</small></span><Input name="media" type="file" accept="image/*,video/*" className="sr-only" /></label></div>}
-    {modal === "donation" && <div className="form-grid"><div><Label>Iznos (RSD)</Label><Input type="number" defaultValue="1000" /></div><div><Label>Ime donatora</Label><Input placeholder="Anonimno" /></div><div className="form-wide donation-note"><ShieldCheck /><span><b>Bezbedno IPS plaćanje</b><small>Aplikacija ne čuva podatke platne kartice.</small></span></div></div>}
-    <DialogFooter><Button type="button" variant="outline" onClick={close}>Otkaži</Button><Button type="submit">{config.action}<ArrowRight /></Button></DialogFooter>
-  </form></DialogContent></Dialog>;
-}
-
-function Dashboard() {
-  const [role, setRole] = useState<Role>("field");
-  const [modal, setModal] = useState<Modal>(null);
+function OperationsDashboard() {
+  const { t, language } = useLanguage();
+  const [workspace, setWorkspace] = useState<Workspace>("field");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [data, setData] = useState<DashboardData>(emptyData);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
+  const [pending, setPending] = useState(0);
+  const [visitTask, setVisitTask] = useState<FieldTask | null | undefined>(undefined);
+  const [incidentOpen, setIncidentOpen] = useState(false);
+
+  const loadData = useCallback(async (quiet = false) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    if (!quiet) setRefreshing(true);
+    const session = await supabase.auth.getSession();
+    const userId = session.data.session?.user.id;
+    if (!userId) return;
+
+    if (!navigator.onLine) {
+      const cached = await readCachedData<DashboardData>(`dashboard:${userId}`);
+      if (cached) setData(cached);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    const [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult] = await Promise.all([
+      supabase.from("profiles").select("id,full_name,email,role,approval_status,assigned_region,faculty").eq("id", userId).single(),
+      supabase.from("field_tasks").select("id,title,address,city_village,latitude,longitude,status,notes,due_date").order("due_date", { ascending: true, nullsFirst: false }),
+      supabase.from("visits").select("id,latitude,longitude,address,status,completed_at").order("completed_at", { ascending: false }).limit(250),
+      supabase.from("incidents").select("id,polling_station_number,municipality,title,description,severity,status,created_at").order("created_at", { ascending: false }).limit(100),
+      supabase.from("travel_expenses").select("id,origin,destination,travel_date,transport_type,amount_rsd,receipt_path,status,admin_note,created_at").order("created_at", { ascending: false }).limit(100),
+      supabase.rpc("get_faculty_leaderboard"),
+      supabase.from("activity_logs").select("id,action,entity_type,metadata,created_at").order("created_at", { ascending: false }).limit(25),
+    ]);
+
+    const firstError = [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult].find((result) => result.error)?.error;
+    if (firstError) toast.error(t("Podaci nisu potpuno učitani.", "Some data could not be loaded."), { description: firstError.message });
+    if (profileResult.data) setProfile(profileResult.data as Profile);
+    const next: DashboardData = {
+      tasks: (tasksResult.data ?? []) as FieldTask[],
+      visits: (visitsResult.data ?? []) as VisitMarker[],
+      incidents: (incidentsResult.data ?? []) as Incident[],
+      expenses: (expensesResult.data ?? []).map((item) => ({ ...item, amount_rsd: Number(item.amount_rsd) })) as Expense[],
+      leaderboard: (leaderboardResult.data ?? []).map((item: LeaderboardRow) => ({ ...item, completed_visits: Number(item.completed_visits), active_volunteers: Number(item.active_volunteers), follow_ups: Number(item.follow_ups) })),
+      activity: (activityResult.data ?? []) as ActivityLog[],
+    };
+    setData(next);
+    await cacheData(`dashboard:${userId}`, next);
+    setPending((await readQueue()).length);
+    setLoading(false);
+    setRefreshing(false);
+  }, [t]);
+
   useEffect(() => {
-    const on = () => setOnline(true); const off = () => setOnline(false);
-    window.addEventListener("online", on); window.addEventListener("offline", off);
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
-  }, []);
+    const initialLoad = window.setTimeout(() => void loadData(true), 0);
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const channel = supabase.channel("operations-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "field_tasks" }, () => void loadData(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, () => void loadData(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "incidents" }, () => void loadData(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "travel_expenses" }, () => void loadData(true))
+      .subscribe();
+    const handleOnline = async () => {
+      setOnline(true);
+      const result = await flushQueue();
+      if (result.synced) toast.success(t(`${result.synced} unosa je sinhronizovano.`, `${result.synced} entries synced.`));
+      await loadData(true);
+    };
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
+    return () => {
+      window.clearTimeout(initialLoad);
+      void supabase.removeChannel(channel);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [loadData, t]);
+
   useEffect(() => {
     const context = document.modelContext;
     if (!context?.registerTool) return;
     const lifecycle = new AbortController();
     void Promise.resolve(context.registerTool({
-      name: "navigate_to_role_workspace",
-      title: "Otvori radni prostor",
-      description: "Switch the visible Terenski Kompas workspace to field canvassing, poll watching, or HQ operations.",
-      inputSchema: { type: "object", properties: { role: { type: "string", enum: ["field", "watcher", "hq"] } }, required: ["role"], additionalProperties: false },
+      name: "open_operations_workspace",
+      title: t("Otvori radni prostor", "Open operations workspace"),
+      description: "Open a Terenski Kompas operational workspace without changing data.",
+      inputSchema: { type: "object", properties: { workspace: { type: "string", enum: ["field", "watcher", "leaderboard", "finder", "expenses", "admin"] } }, required: ["workspace"], additionalProperties: false },
       annotations: { readOnlyHint: true, untrustedContentHint: false },
       execute(input) {
-        const value = (input as { role?: string })?.role;
-        if (value === "hq") {
-          window.location.href = "/admin";
-          return { role: value, status: "opening_admin_portal" };
-        }
-        if (value !== "field" && value !== "watcher") throw new Error("Invalid role");
-        setRole(value);
-        return { role: value, status: "visible" };
-      },
-    }, { signal: lifecycle.signal })).catch(() => undefined);
-    void Promise.resolve(context.registerTool({
-      name: "start_field_entry",
-      title: "Započni terenski unos",
-      description: "Open the visible form for a visit, recruit, incident, or donation entry without submitting it.",
-      inputSchema: { type: "object", properties: { entryType: { type: "string", enum: ["visit", "recruit", "incident", "donation"] } }, required: ["entryType"], additionalProperties: false },
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute(input) {
-        const value = (input as { entryType?: string })?.entryType;
-        if (value !== "visit" && value !== "recruit" && value !== "incident" && value !== "donation") throw new Error("Invalid entry type");
-        setModal(value);
-        return { entryType: value, status: "form_open" };
+        const value = (input as { workspace?: string }).workspace;
+        if (value === "admin") { window.location.href = "/admin"; return { status: "opening_admin" }; }
+        if (!["field", "watcher", "leaderboard", "finder", "expenses"].includes(value ?? "")) throw new Error("Invalid workspace");
+        setWorkspace(value as Workspace);
+        return { status: "visible", workspace: value };
       },
     }, { signal: lifecycle.signal })).catch(() => undefined);
     return () => lifecycle.abort();
-  }, []);
+  }, [t]);
+
   const signOut = async () => {
     await getSupabase()?.auth.signOut();
     window.location.href = "/login";
   };
-  return <div className="app-shell"><aside className="desktop-rail"><div className="brand-mark"><Compass /></div><nav aria-label="Glavna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")} title="Teren"><Map /></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")} title="Kontrola"><ShieldCheck /></button><a href="/admin" title="Admin portal"><BarChart3 /></a></nav><button className="avatar-button" title="Odjavi se" onClick={signOut}>MJ</button></aside>
-    <main className="app-main"><header className="topbar"><div className="brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>STUDENTSKA LISTA · SUSS</small></div></div><Tabs value={role} onValueChange={(v) => setRole(v as Role)} className="role-tabs"><TabsList><TabsTrigger value="field">Teren</TabsTrigger><TabsTrigger value="watcher">Kontrolor</TabsTrigger><a href="/admin" className="admin-tab-link">Centrala</a></TabsList><TabsContent value="field" /><TabsContent value="watcher" /></Tabs><div className="top-actions"><span className={online ? "online" : "offline"}>{online ? <Signal /> : <CloudOff />}{online ? "Na mreži" : "Rad van mreže"}</span><button className="round-btn" aria-label="Obaveštenja"><Bell /><i /></button><button className="menu-btn" aria-label="Meni"><Menu /></button></div></header>
-      <div className="content-wrap">{role === "field" && <FieldView open={setModal} />}{role === "watcher" && <WatcherView open={setModal} />}</div>
-      <nav className="mobile-nav" aria-label="Mobilna navigacija"><button className={role === "field" ? "active" : ""} onClick={() => setRole("field")}><Map /><span>Teren</span></button><button className={role === "watcher" ? "active" : ""} onClick={() => setRole("watcher")}><ShieldCheck /><span>Kontrola</span></button><button className="mobile-add" onClick={() => setModal(role === "watcher" ? "incident" : "visit")}><Plus /></button><a href="/admin"><BarChart3 /><span>Centrala</span></a><button onClick={() => toast("Profil je spreman za pregled")}><Users /><span>Profil</span></button></nav>
-    </main><EntryDialog modal={modal} close={() => setModal(null)} /><Toaster richColors position="top-center" /></div>;
+
+  const syncNow = async () => {
+    if (!navigator.onLine) return toast.error(t("Nema internet veze.", "No internet connection."));
+    setRefreshing(true);
+    const result = await flushQueue();
+    await loadData(true);
+    toast.success(t(`Sinhronizovano: ${result.synced}.`, `Synced: ${result.synced}.`));
+  };
+
+  if (loading || !profile) return <main className="setup-screen"><LoaderCircle className="spin" /><p>{t("Učitavamo terenske podatke…", "Loading field operations…")}</p></main>;
+
+  const firstName = profile.full_name.trim().split(/\s+/)[0] || profile.full_name;
+  return <div className="ops-shell">
+    <aside className="ops-rail">
+      <span className="brand-mark"><Compass /></span>
+      <nav aria-label={t("Glavna navigacija", "Main navigation")}>{navItems(t).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)} title={item.label}>{item.icon}</button>)}{profile.role === "admin" && <a href="/admin" title={t("Centrala", "Admin center")}><BarChart3 /></a>}</nav>
+      <button type="button" className="profile-avatar-button" onClick={signOut} title={t("Odjavi se", "Sign out")}>{initials(profile.full_name)}</button>
+    </aside>
+    <main className="ops-main">
+      <header className="ops-header">
+        <div className="ops-brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>{roleLabel(profile.role, language)} · {profile.assigned_region || t("Region nije dodeljen", "Region not assigned")}</small></div></div>
+        <nav className="ops-tabs" aria-label={t("Radni prostori", "Workspaces")}>{navItems(t).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.label}</button>)}</nav>
+        <div className="ops-actions"><LanguageToggle compact /><button type="button" className={online ? "network-state online" : "network-state offline"} onClick={() => void syncNow()}>{online ? <Signal /> : <CloudOff />}{online ? t("Na mreži", "Online") : t("Selo režim", "Village mode")}{pending > 0 && <b>{pending}</b>}</button></div>
+      </header>
+      <div className="ops-content">
+        <div className="ops-welcome"><div><p className="eyebrow">{workspaceEyebrow(workspace, t)}</p><h1>{t(`Zdravo, ${firstName}.`, `Hello, ${firstName}.`)}</h1><p>{workspaceDescription(workspace, t)}</p></div><Button variant="outline" onClick={() => void loadData()} disabled={refreshing}><RefreshCw className={refreshing ? "spin" : ""} /> {t("Osveži", "Refresh")}</Button></div>
+        {workspace === "field" && <FieldWorkspace data={data} pending={pending} onVisit={(task) => setVisitTask(task)} />}
+        {workspace === "watcher" && <WatcherWorkspace incidents={data.incidents} onReport={() => setIncidentOpen(true)} />}
+        {workspace === "leaderboard" && <LeaderboardWorkspace rows={data.leaderboard} />}
+        {workspace === "finder" && <PollingStationFinder />}
+        {workspace === "expenses" && <ExpensesWorkspace profile={profile} expenses={data.expenses} onSaved={() => void loadData(true)} />}
+      </div>
+      <nav className="ops-mobile-nav">{navItems(t).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.icon}<span>{item.short}</span></button>)}</nav>
+    </main>
+    <VisitDialog open={visitTask !== undefined} task={visitTask ?? null} profile={profile} onClose={() => setVisitTask(undefined)} onSaved={() => void loadData(true)} />
+    <IncidentDialog open={incidentOpen} profile={profile} onClose={() => setIncidentOpen(false)} onSaved={() => void loadData(true)} />
+    <Toaster richColors position="top-center" />
+  </div>;
 }
 
-export default function HomePage() {
-  return <AuthGate><Dashboard /></AuthGate>;
+function FieldWorkspace({ data, pending, onVisit }: { data: DashboardData; pending: number; onVisit: (task: FieldTask | null) => void }) {
+  const { t, language } = useLanguage();
+  const openTasks = data.tasks.filter((task) => task.status === "assigned" || task.status === "in_progress");
+  const completedToday = data.visits.filter((visit) => isToday(visit.completed_at)).length;
+  return <div className="workspace-stack">
+    <section className="metric-row"><Metric icon={<ClipboardList />} label={t("Dodeljeni zadaci", "Assigned tasks")} value={openTasks.length} /><Metric icon={<CheckCircle2 />} label={t("Posete danas", "Visits today")} value={completedToday} /><Metric icon={<MapPin />} label={t("Ukupno poseta", "Total visits")} value={data.visits.length} /><Metric icon={<WifiOff />} label={t("Čeka sinhronizaciju", "Queued offline")} value={pending} /></section>
+    <div className="field-layout"><LiveFieldMap tasks={data.tasks} visits={data.visits} onSelectTask={onVisit} /><aside className="task-list-panel"><div className="panel-heading"><div><p className="eyebrow">{t("MOJI ZADACI", "MY TASKS")}</p><h2>{t("Sledeće adrese", "Next addresses")}</h2></div><Button size="sm" onClick={() => onVisit(null)}><Plus /> {t("Poseta", "Visit")}</Button></div>{openTasks.length === 0 ? <EmptyState icon={<ClipboardList />} title={t("Nema otvorenih zadataka", "No open tasks")} text={t("Koordinator još nije dodelio nove adrese.", "Your coordinator has not assigned new addresses yet.")} /> : <div className="task-list">{openTasks.map((task) => <article key={task.id}><span className={`task-state ${task.status}`} /><div><b>{task.title}</b><p>{task.address}, {task.city_village}</p><small>{task.due_date ? new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium" }).format(new Date(`${task.due_date}T12:00:00`)) : t("Bez roka", "No due date")}</small></div><button type="button" onClick={() => onVisit(task)}><ArrowRight /></button></article>)}</div>}</aside></div>
+    <section className="data-panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">{t("AKTIVNOST", "ACTIVITY")}</p><h2>{t("Nedavne terenske promene", "Recent field updates")}</h2></div></div>{data.activity.length === 0 ? <EmptyState icon={<RefreshCw />} title={t("Nema aktivnosti", "No activity yet")} text={t("Sinhronizovane posete i prijave pojaviće se ovde.", "Synced visits and reports will appear here.")} /> : <div className="activity-list">{data.activity.map((entry) => <article key={entry.id}><RefreshCw /><div><b>{activityLabel(entry.action, t)}</b><small>{new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.created_at))}</small></div></article>)}</div>}</section>
+  </div>;
+}
+
+function activityLabel(action: string, t: (sr: string, en: string) => string) {
+  return ({ visit_completed: t("Poseta je evidentirana", "Visit recorded"), incident_reported: t("Incident je prijavljen", "Incident reported"), expense_submitted: t("Trošak je poslat", "Expense submitted") } as Record<string, string>)[action] ?? action.replaceAll("_", " ");
+}
+
+function WatcherWorkspace({ incidents, onReport }: { incidents: Incident[]; onReport: () => void }) {
+  const { t, language } = useLanguage();
+  const critical = incidents.filter((incident) => incident.severity === "critical" && !["dismissed", "verified"].includes(incident.status)).length;
+  const pending = incidents.filter((incident) => incident.status === "pending_review").length;
+  return <div className="workspace-stack"><section className="metric-row"><Metric icon={<AlertTriangle />} label={t("Otvorene prijave", "Open reports")} value={pending} /><Metric icon={<Radio />} label={t("Kritične", "Critical")} value={critical} /><Metric icon={<ShieldCheck />} label={t("Ukupno prijava", "Total reports")} value={incidents.length} /></section><section className="data-panel"><div className="panel-heading"><div><p className="eyebrow">{t("IZBORNI DAN", "ELECTION DAY")}</p><h2>{t("Prijave incidenata", "Incident reports")}</h2></div><Button className="danger-btn" onClick={onReport}><AlertTriangle /> {t("Prijavi incident", "Report incident")}</Button></div>{incidents.length === 0 ? <EmptyState icon={<ShieldCheck />} title={t("Nema prijavljenih incidenata", "No incidents reported")} text={t("Nove prijave će se pojaviti ovde u realnom vremenu.", "New reports will appear here in real time.")} /> : <div className="incident-table">{incidents.map((incident) => <article key={incident.id}><span className={`severity-dot ${incident.severity}`} /><div><small>{incident.polling_station_number} · {incident.municipality}</small><h3>{incident.title}</h3><p>{incident.description}</p></div><div><span className={`status-pill ${incident.status}`}>{incidentStatus(incident.status, language)}</span><small>{new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(incident.created_at))}</small></div></article>)}</div>}</section></div>;
+}
+
+function LeaderboardWorkspace({ rows }: { rows: LeaderboardRow[] }) {
+  const { t } = useLanguage();
+  return <section className="data-panel leaderboard-panel"><div className="panel-heading"><div><p className="eyebrow">{t("FAKULTETSKA TABELA", "FACULTY LEADERBOARD")}</p><h2>{t("Terenski učinak po fakultetima", "Field performance by faculty")}</h2><p>{t("Rangiranje se automatski računa iz stvarno završenih poseta.", "Rankings are calculated automatically from completed visits.")}</p></div><Trophy /></div>{rows.length === 0 ? <EmptyState icon={<Trophy />} title={t("Još nema rezultata", "No results yet")} text={t("Tabela će se popuniti nakon prvih evidentiranih poseta i dodeljenih fakulteta.", "The board will populate after visits are recorded and faculties are assigned.")} /> : <div className="leaderboard-list">{rows.map((row, index) => <article key={row.faculty}><span className={`leader-rank rank-${index + 1}`}>{index + 1}</span><div><h3>{row.faculty}</h3><p>{row.active_volunteers} {t("aktivnih volontera", "active volunteers")} · {row.follow_ups} {t("praćenja", "follow-ups")}</p></div><strong>{row.completed_visits}<small>{t("poseta", "visits")}</small></strong></article>)}</div>}</section>;
+}
+
+function PollingStationFinder() {
+  const { t } = useLanguage();
+  const [results, setResults] = useState<PollingStation[]>([]);
+  const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const search = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = String(new FormData(event.currentTarget).get("address") ?? "").trim();
+    if (!query) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    setLoading(true);
+    const { data, error } = await supabase.rpc("find_polling_stations", { search_text: query });
+    if (error) toast.error(t("Pretraga nije uspela.", "Search failed."), { description: error.message });
+    setResults((data ?? []) as PollingStation[]);
+    setSearched(true);
+    setLoading(false);
+  };
+  return <section className="finder-layout"><div className="finder-card"><p className="eyebrow">{t("PRONALAZAČ BIRAČKOG MESTA", "POLLING STATION FINDER")}</p><h2>{t("Pronađi biračko mesto", "Find a polling station")}</h2><p>{t("Unesi ulicu, opštinu ili broj biračkog mesta.", "Enter a street, municipality, or station number.")}</p><form onSubmit={search}><Search /><Input name="address" aria-label={t("Adresa ili broj biračkog mesta", "Address or polling station number")} placeholder={t("Na primer: Bulevar oslobođenja, Novi Sad", "For example: Bulevar oslobođenja, Novi Sad")} required /><Button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <LocateFixed />} {t("Pronađi", "Find")}</Button></form><small>{t("Rezultati dolaze iz verifikovanog registra biračkih mesta u Supabase bazi.", "Results come from the verified polling-station registry in Supabase.")}</small></div><div className="finder-results">{!searched ? <EmptyState icon={<MapPin />} title={t("Spremno za pretragu", "Ready to search")} text={t("Podaci o smeru i koordinatoru prikazuju se odmah nakon pretrage.", "Directions and coordinator details appear after searching.")} /> : results.length === 0 ? <EmptyState icon={<Search />} title={t("Nema poklapanja", "No match found")} text={t("Proveri adresu ili se obrati koordinatoru da dopuni registar.", "Check the address or ask an administrator to update the registry.")} /> : results.map((station) => <article className="station-result" key={station.id}><div><span>{station.municipality}</span><h3>{station.station_number}</h3><p>{station.address}</p></div><dl><div><dt>{t("Koordinator", "Coordinator")}</dt><dd>{station.coordinator_name || t("Nije dodeljen", "Not assigned")}</dd></div><div><dt>{t("Telefon", "Phone")}</dt><dd>{station.coordinator_phone ? <a href={`tel:${station.coordinator_phone}`}>{station.coordinator_phone}</a> : t("Nije unet", "Not entered")}</dd></div></dl><a className="route-link" href={`https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=;${station.latitude},${station.longitude}`} target="_blank" rel="noreferrer"><Navigation /> {t("Otvori smer", "Open directions")}</a></article>)}</div></section>;
+}
+
+function ExpensesWorkspace({ profile, expenses, onSaved }: { profile: Profile; expenses: Expense[]; onSaved: () => void }) {
+  const { t, language } = useLanguage();
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const file = form.get("receipt");
+    const id = crypto.randomUUID();
+    const path = file instanceof File && file.size ? `${profile.id}/${id}-${safeFileName(file.name)}` : null;
+    const payload: Record<string, unknown> = { id, user_id: profile.id, origin: String(form.get("origin") ?? "").trim(), destination: String(form.get("destination") ?? "").trim(), travel_date: String(form.get("travel_date") ?? ""), transport_type: String(form.get("transport_type") ?? "bus"), amount_rsd: Number(form.get("amount_rsd")), notes: String(form.get("notes") ?? "").trim() || null, receipt_path: path, status: "pending_review" };
+    setBusy(true);
+    const supabase = getSupabase();
+    if (!supabase || !navigator.onLine) {
+      await enqueue("travel_expenses", { ...payload, receipt_path: null }, path && file instanceof File ? { bucket: "expense-receipts", path, field: "receipt_path", file } : undefined);
+      await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "expense_submitted", entity_type: "travel_expense", entity_id: id, metadata: {} });
+      toast.success(t("Trošak je sačuvan i čeka sinhronizaciju.", "Expense saved and queued for sync."));
+      formElement.reset(); setBusy(false); onSaved(); return;
+    }
+    if (path && file instanceof File) {
+      const upload = await supabase.storage.from("expense-receipts").upload(path, file);
+      if (upload.error) { toast.error(t("Račun nije otpremljen.", "Receipt upload failed."), { description: upload.error.message }); setBusy(false); return; }
+    }
+    const { error } = await supabase.from("travel_expenses").insert(payload);
+    if (error) toast.error(t("Trošak nije poslat.", "Expense was not submitted."), { description: error.message });
+    else { await supabase.from("activity_logs").insert({ user_id: profile.id, action: "expense_submitted", entity_type: "travel_expense", entity_id: id, metadata: {} }); toast.success(t("Putni trošak je poslat na pregled.", "Travel expense submitted for review.")); formElement.reset(); onSaved(); }
+    setBusy(false);
+  };
+  return <div className="expense-layout"><section className="data-panel expense-form-panel"><div className="panel-heading"><div><p className="eyebrow">{t("PUTNI TROŠKOVI", "TRAVEL EXPENSES")}</p><h2>{t("Nova prijava", "New claim")}</h2></div><Receipt /></div><form className="expense-form" onSubmit={submit}><div><Label htmlFor="origin">{t("Polazak", "Origin")}</Label><Input id="origin" name="origin" required /></div><div><Label htmlFor="destination">{t("Odredište", "Destination")}</Label><Input id="destination" name="destination" required /></div><div><Label htmlFor="travel_date">{t("Datum puta", "Travel date")}</Label><Input id="travel_date" name="travel_date" type="date" required /></div><div><Label>{t("Prevoz", "Transport")}</Label><Select name="transport_type" defaultValue="bus"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="bus">{t("Autobus", "Bus")}</SelectItem><SelectItem value="train">{t("Voz", "Train")}</SelectItem><SelectItem value="car">{t("Automobil", "Car")}</SelectItem><SelectItem value="other">{t("Drugo", "Other")}</SelectItem></SelectContent></Select></div><div><Label htmlFor="amount_rsd">{t("Iznos RSD", "Amount RSD")}</Label><Input id="amount_rsd" name="amount_rsd" type="number" min="1" step="0.01" required /></div><div><Label htmlFor="receipt">{t("Karta ili račun", "Ticket or receipt")}</Label><Input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" /></div><div className="form-wide"><Label htmlFor="expense_notes">{t("Napomena", "Notes")}</Label><Textarea id="expense_notes" name="notes" /></div><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <Receipt />} {t("Pošalji na pregled", "Submit for review")}</Button></form></section><section className="data-panel"><div className="panel-heading"><div><p className="eyebrow">{t("MOJE PRIJAVE", "MY CLAIMS")}</p><h2>{t("Status refundacija", "Reimbursement status")}</h2></div></div>{expenses.length === 0 ? <EmptyState icon={<Receipt />} title={t("Nema prijavljenih troškova", "No expense claims")} text={t("Nove prijave i status pregleda pojaviće se ovde.", "New claims and review status will appear here.")} /> : <div className="expense-list">{expenses.map((expense) => <article key={expense.id}><div><b>{expense.origin} → {expense.destination}</b><p>{new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium" }).format(new Date(`${expense.travel_date}T12:00:00`))} · {expense.transport_type}</p>{expense.admin_note && <small>{expense.admin_note}</small>}</div><strong>{expense.amount_rsd.toLocaleString(language === "sr" ? "sr-RS" : "en-GB")} RSD<span className={`status-pill ${expense.status}`}>{expenseStatus(expense.status, language)}</span></strong></article>)}</div>}</section></div>;
+}
+
+function VisitDialog({ open, task, profile, onClose, onSaved }: { open: boolean; task: FieldTask | null; profile: Profile; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const id = crypto.randomUUID();
+    const payload = { id, canvasser_id: profile.id, task_id: task?.id ?? null, latitude: Number(form.get("latitude")), longitude: Number(form.get("longitude")), address: String(form.get("address") ?? "").trim() || null, city_village: String(form.get("city_village") ?? "").trim(), status: String(form.get("status") ?? "visited_neutral"), notes: String(form.get("notes") ?? "").trim() || null, follow_up_requested: form.get("follow_up") === "yes", completed_at: new Date().toISOString() };
+    setBusy(true);
+    const supabase = getSupabase();
+    if (!supabase || !navigator.onLine) {
+      await enqueue("visits", payload);
+      await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "visit_completed", entity_type: "visit", entity_id: id, metadata: { task_id: task?.id ?? null } });
+      toast.success(t("Poseta je sačuvana u Selo režimu.", "Visit saved in Village mode."));
+      setBusy(false); onClose(); onSaved(); return;
+    }
+    const { error } = await supabase.from("visits").insert(payload);
+    if (error) toast.error(t("Poseta nije sačuvana.", "Visit was not saved."), { description: error.message });
+    else {
+      if (task) await supabase.from("field_tasks").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", task.id);
+      await supabase.from("activity_logs").insert({ user_id: profile.id, action: "visit_completed", entity_type: "visit", entity_id: id, metadata: { task_id: task?.id ?? null } });
+      toast.success(t("Poseta je sinhronizovana.", "Visit synced.")); onClose(); onSaved();
+    }
+    setBusy(false);
+  };
+  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><DialogTitle>{t("Zabeleži posetu", "Log a visit")}</DialogTitle><DialogDescription>{task ? `${task.title} · ${task.address}` : t("Unesi stvarne podatke sa terena.", "Enter real field data.")}</DialogDescription></DialogHeader><div className="form-grid"><div className="form-wide"><Label>{t("Adresa", "Address")}</Label><Input name="address" defaultValue={task?.address ?? ""} required /></div><div><Label>{t("Mesto", "City or village")}</Label><Input name="city_village" defaultValue={task?.city_village ?? profile.assigned_region ?? ""} required /></div><div><Label>{t("Ishod", "Outcome")}</Label><Select name="status" defaultValue="visited_neutral"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="visited_supporter">{t("Podržava", "Supporter")}</SelectItem><SelectItem value="visited_neutral">{t("Neodlučan", "Neutral")}</SelectItem><SelectItem value="visited_hostile">{t("Protiv", "Hostile")}</SelectItem><SelectItem value="not_home">{t("Nije kod kuće", "Not home")}</SelectItem><SelectItem value="refused">{t("Odbio razgovor", "Refused")}</SelectItem></SelectContent></Select></div><div><Label>{t("Praćenje", "Follow-up")}</Label><Select name="follow_up" defaultValue="no"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="no">{t("Nije potrebno", "Not needed")}</SelectItem><SelectItem value="yes">{t("Potrebno", "Required")}</SelectItem></SelectContent></Select></div><div><Label>{t("Geografska širina", "Latitude")}</Label><Input name="latitude" type="number" step="any" defaultValue={task?.latitude ?? ""} required /></div><div><Label>{t("Geografska dužina", "Longitude")}</Label><Input name="longitude" type="number" step="any" defaultValue={task?.longitude ?? ""} required /></div><div className="form-wide"><Label>{t("Beleška", "Notes")}</Label><Textarea name="notes" /></div></div><DialogFooter><Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />} {t("Sačuvaj posetu", "Save visit")}</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+
+function IncidentDialog({ open, profile, onClose, onSaved }: { open: boolean; profile: Profile; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const id = crypto.randomUUID();
+    const file = form.get("media");
+    const path = file instanceof File && file.size ? `${profile.id}/${id}-${safeFileName(file.name)}` : null;
+    const position = await currentPosition();
+    const payload: Record<string, unknown> = { id, reporter_id: profile.id, polling_station_number: String(form.get("polling_station_number") ?? "").trim(), municipality: String(form.get("municipality") ?? "").trim(), title: String(form.get("title") ?? "").trim(), description: String(form.get("description") ?? "").trim(), severity: String(form.get("severity") ?? "medium"), status: "pending_review", media_urls: [], latitude: position?.latitude ?? null, longitude: position?.longitude ?? null };
+    setBusy(true);
+    const supabase = getSupabase();
+    if (!supabase || !navigator.onLine) {
+      await enqueue("incidents", payload, path && file instanceof File ? { bucket: "incident-media", path, field: "media_urls", file } : undefined);
+      await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "incident_reported", entity_type: "incident", entity_id: id, metadata: { severity: payload.severity } });
+      toast.success(t("Prijava je sačuvana i čeka mrežu.", "Report saved and waiting for a connection."));
+      setBusy(false); onClose(); onSaved(); return;
+    }
+    if (path && file instanceof File) {
+      const upload = await supabase.storage.from("incident-media").upload(path, file);
+      if (upload.error) { toast.error(t("Prilog nije otpremljen.", "Attachment upload failed."), { description: upload.error.message }); setBusy(false); return; }
+      payload.media_urls = [path];
+    }
+    const { error } = await supabase.from("incidents").insert(payload);
+    if (error) toast.error(t("Incident nije prijavljen.", "Incident was not submitted."), { description: error.message });
+    else { await supabase.from("activity_logs").insert({ user_id: profile.id, action: "incident_reported", entity_type: "incident", entity_id: id, metadata: { severity: payload.severity } }); toast.success(t("Incident je poslat na proveru.", "Incident submitted for review.")); onClose(); onSaved(); }
+    setBusy(false);
+  };
+  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><DialogTitle>{t("Prijavi incident", "Report an incident")}</DialogTitle><DialogDescription>{t("Vreme i lokacija se dodaju automatski kada su dostupni.", "Time and location are added automatically when available.")}</DialogDescription></DialogHeader><div className="form-grid"><div><Label>{t("Biračko mesto", "Polling station")}</Label><Input name="polling_station_number" required /></div><div><Label>{t("Opština", "Municipality")}</Label><Input name="municipality" required /></div><div><Label>{t("Ozbiljnost", "Severity")}</Label><Select name="severity" defaultValue="medium"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">{t("Niska", "Low")}</SelectItem><SelectItem value="medium">{t("Srednja", "Medium")}</SelectItem><SelectItem value="critical">{t("Kritična", "Critical")}</SelectItem></SelectContent></Select></div><div><Label>{t("Foto ili video", "Photo or video")}</Label><Input name="media" type="file" accept="image/*,video/mp4,video/quicktime" /></div><div className="form-wide"><Label>{t("Naslov", "Title")}</Label><Input name="title" required /></div><div className="form-wide"><Label>{t("Opis", "Description")}</Label><Textarea name="description" required /></div></div><DialogFooter><Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <AlertTriangle />} {t("Pošalji prijavu", "Submit report")}</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+
+function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
+  return <div className="ops-metric"><span>{icon}</span><div><strong>{value}</strong><p>{label}</p></div></div>;
+}
+
+function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return <div className="ops-empty"><span>{icon}</span><h3>{title}</h3><p>{text}</p></div>;
+}
+
+function navItems(t: (sr: string, en: string) => string): Array<{ id: Workspace; label: string; short: string; icon: ReactNode }> {
+  return [
+    { id: "field", label: t("Teren", "Field"), short: t("Teren", "Field"), icon: <Map /> },
+    { id: "watcher", label: t("Kontrolor", "Watcher"), short: t("Kontrola", "Watch"), icon: <ShieldCheck /> },
+    { id: "leaderboard", label: t("Fakulteti", "Faculties"), short: t("Tabela", "Board"), icon: <Trophy /> },
+    { id: "finder", label: t("Biračko mesto", "Polling station"), short: t("Pronađi", "Find"), icon: <Search /> },
+    { id: "expenses", label: t("Troškovi", "Expenses"), short: t("Troškovi", "Costs"), icon: <Receipt /> },
+  ];
+}
+
+function workspaceEyebrow(workspace: Workspace, t: (sr: string, en: string) => string) {
+  return ({ field: t("TERENSKI RAD", "FIELD OPERATIONS"), watcher: t("IZBORNI NADZOR", "ELECTION MONITORING"), leaderboard: t("GAMIFIKACIJA", "GAMIFICATION"), finder: t("BRZA PRETRAGA", "INSTANT LOOKUP"), expenses: t("REFUNDACIJE", "REIMBURSEMENTS") })[workspace];
+}
+
+function workspaceDescription(workspace: Workspace, t: (sr: string, en: string) => string) {
+  return ({ field: t("Dodeljene adrese, mapa i evidencija obilaska.", "Assigned addresses, map, and visit logging."), watcher: t("Prijave i status incidenata sa biračkih mesta.", "Polling-station incident reports and statuses."), leaderboard: t("Učinak fakultetskih timova iz stvarnih terenskih podataka.", "Faculty team performance from live field data."), finder: t("Pronađi verifikovano biračko mesto i lokalnog koordinatora.", "Find a verified polling station and local coordinator."), expenses: t("Prijavi kartu ili putni trošak i prati odobrenje.", "Submit travel costs and track approval.") })[workspace];
+}
+
+function roleLabel(role: UserRole, language: "sr" | "en") {
+  const labels = { admin: ["Administrator", "Administrator"], coordinator: ["Koordinator", "Coordinator"], canvasser: ["Volonter", "Canvasser"], poll_watcher: ["Kontrolor", "Poll watcher"] } as const;
+  return labels[role][language === "sr" ? 0 : 1];
+}
+
+function incidentStatus(status: Incident["status"], language: "sr" | "en") {
+  const labels = { pending_review: ["Čeka proveru", "Pending review"], verified: ["Potvrđen", "Verified"], dismissed: ["Odbačen", "Dismissed"], escalated_to_legal: ["Pravna služba", "Legal review"] } as const;
+  return labels[status][language === "sr" ? 0 : 1];
+}
+
+function expenseStatus(status: Expense["status"], language: "sr" | "en") {
+  const labels = { pending_review: ["Čeka proveru", "Pending review"], approved: ["Odobren", "Approved"], rejected: ["Odbijen", "Rejected"], paid: ["Isplaćen", "Paid"] } as const;
+  return labels[status][language === "sr" ? 0 : 1];
+}
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "TK";
+}
+
+function isToday(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+}
+
+function safeFileName(value: string) {
+  return value.normalize("NFKD").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
+}
+
+function currentPosition(): Promise<{ latitude: number; longitude: number } | null> {
+  if (!("geolocation" in navigator)) return Promise.resolve(null);
+  return new Promise((resolve) => navigator.geolocation.getCurrentPosition(
+    (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+    () => resolve(null),
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+  ));
 }

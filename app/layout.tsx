@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
+import { LanguageProvider } from "@/components/language-provider";
 
 export const metadata: Metadata = {
   title: "Terenski Kompas | SUSS",
@@ -18,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="sr-Latn">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><LanguageProvider>{children}</LanguageProvider></body>
     </html>
   );
 }
