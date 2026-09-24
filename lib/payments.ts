@@ -6,15 +6,16 @@ export type PaymentConfig = {
   referencePrefix: string;
 };
 
+function envOrFallback(value: string | undefined, fallback: string) {
+  return value?.trim() || fallback;
+}
+
 export const defaultPaymentConfig: PaymentConfig = {
-  beneficiaryName:
-    process.env.NEXT_PUBLIC_NBS_BENEFICIARY_NAME ?? "STUDENTSKA LISTA - SUSS",
-  account: process.env.NEXT_PUBLIC_NBS_ACCOUNT ?? "840000000000000000",
-  paymentCode: process.env.NEXT_PUBLIC_NBS_PAYMENT_CODE ?? "289",
-  purpose:
-    process.env.NEXT_PUBLIC_NBS_PURPOSE ??
-    "Donacija za SUSS terensku kampanju",
-  referencePrefix: process.env.NEXT_PUBLIC_NBS_REFERENCE_PREFIX ?? "SUSS",
+  beneficiaryName: envOrFallback(process.env.NEXT_PUBLIC_NBS_BENEFICIARY_NAME, "STUDENTSKA LISTA - SUSS"),
+  account: envOrFallback(process.env.NEXT_PUBLIC_NBS_ACCOUNT, "840000000000000000"),
+  paymentCode: envOrFallback(process.env.NEXT_PUBLIC_NBS_PAYMENT_CODE, "289"),
+  purpose: envOrFallback(process.env.NEXT_PUBLIC_NBS_PURPOSE, "Donacija za SUSS terensku kampanju"),
+  referencePrefix: envOrFallback(process.env.NEXT_PUBLIC_NBS_REFERENCE_PREFIX, "SUSS"),
 };
 
 export function formatIpsAmount(amount: number) {
