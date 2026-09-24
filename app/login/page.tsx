@@ -40,7 +40,7 @@ export default function LoginPage() {
     const email = String(form.get("email") ?? "").trim();
     const password = String(form.get("password") ?? "");
     const fullName = String(form.get("full_name") ?? "").trim();
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath())}`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath())}${mode === "magic" ? "&setup=password" : ""}`;
     setBusy(true);
     setStatus(null);
 

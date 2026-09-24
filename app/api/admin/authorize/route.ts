@@ -20,13 +20,13 @@ export async function GET(request: Request) {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("role,approval_status")
+    .select("role,approval_status,assigned_region,faculty,is_root_admin")
     .eq("id", authData.user.id)
     .single();
 
-  if (error || profile?.role !== "admin" || profile.approval_status !== "approved") {
+  if (error || !profile || !["admin", "coordinator"].includes(profile.role) || profile.approval_status !== "approved") {
     return Response.json({ allowed: false }, { status: 403 });
   }
 
-  return Response.json({ allowed: true, userId: authData.user.id });
+  return Response.json({ allowed: true, userId: authData.user.id, role: profile.role, assignedRegion: profile.assigned_region, faculty: profile.faculty, isRootAdmin: profile.is_root_admin });
 }

@@ -25,7 +25,8 @@ export default function AuthCallbackPage() {
         : await supabase.auth.getSession();
       if (!active) return;
       const session = "session" in result.data ? result.data.session : null;
-      window.location.replace(session ? safeNext(params) : "/login?error=link");
+      const needsPassword = params.get("setup") === "password" && !session?.user.user_metadata?.password_configured;
+      window.location.replace(session ? (needsPassword ? "/profile?setup=password" : safeNext(params)) : "/login?error=link");
     })().catch(() => {
       if (active) window.location.replace("/login?error=link");
     });

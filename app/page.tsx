@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-location-assign-relative-destination */
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, Map, MapPin, Navigation, Plus, Radio, Receipt, RefreshCw, Search, ShieldCheck, Signal, Trophy, WifiOff } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, LogOut, Map, MapPin, Navigation, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth-gate";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
@@ -227,16 +227,17 @@ function OperationsDashboard() {
   if (loading || !profile) return <main className="setup-screen"><LoaderCircle className="spin" /><p>{t("Učitavamo terenske podatke…", "Loading field operations…")}</p></main>;
 
   const firstName = profile.full_name.trim().split(/\s+/)[0] || profile.full_name;
+  const visibleNav = navItems(t).filter((item) => roleWorkspaces(profile.role).includes(item.id));
   return <div className="ops-shell">
     <aside className="ops-rail">
       <span className="brand-mark"><Compass /></span>
-      <nav aria-label={t("Glavna navigacija", "Main navigation")}>{navItems(t).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)} title={item.label}>{item.icon}</button>)}{profile.role === "admin" && <a href="/admin" title={t("Centrala", "Admin center")}><BarChart3 /></a>}</nav>
-      <button type="button" className="profile-avatar-button" onClick={signOut} title={t("Odjavi se", "Sign out")}>{initials(profile.full_name)}</button>
+      <nav aria-label={t("Glavna navigacija", "Main navigation")}>{visibleNav.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)} title={item.label}>{item.icon}</button>)}{["admin","coordinator"].includes(profile.role) && <a href="/admin" title={t("Centrala", "Admin center")}><BarChart3 /></a>}<a href="/profile" title={t("Profil i podešavanja", "Profile & settings")}><Settings /></a></nav>
+      <div className="rail-account"><a className="profile-avatar-button" href="/profile">{initials(profile.full_name)}</a><button type="button" className="rail-logout" onClick={signOut} title={t("Odjavi se", "Log out")}><LogOut /></button></div>
     </aside>
     <main className="ops-main">
       <header className="ops-header">
         <div className="ops-brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>{roleLabel(profile.role, language)} · {profile.assigned_region || t("Region nije dodeljen", "Region not assigned")}</small></div></div>
-        <nav className="ops-tabs" aria-label={t("Radni prostori", "Workspaces")}>{navItems(t).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.label}</button>)}</nav>
+        <nav className="ops-tabs" aria-label={t("Radni prostori", "Workspaces")}>{visibleNav.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.label}</button>)}</nav>
         <div className="ops-actions"><LanguageToggle compact /><button type="button" className={online ? "network-state online" : "network-state offline"} onClick={() => void syncNow()}>{online ? <Signal /> : <CloudOff />}{online ? t("Na mreži", "Online") : t("Selo režim", "Village mode")}{pending > 0 && <b>{pending}</b>}</button></div>
       </header>
       <div className="ops-content">
@@ -247,7 +248,7 @@ function OperationsDashboard() {
         {workspace === "finder" && <PollingStationFinder />}
         {workspace === "expenses" && <ExpensesWorkspace profile={profile} expenses={data.expenses} onSaved={() => void loadData(true)} />}
       </div>
-      <nav className="ops-mobile-nav">{navItems(t).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.icon}<span>{item.short}</span></button>)}</nav>
+      <nav className="ops-mobile-nav">{visibleNav.slice(0, 4).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.icon}<span>{item.short}</span></button>)}<a href="/profile"><Settings /><span>{t("Profil", "Profile")}</span></a></nav>
     </main>
     <VisitDialog open={visitTask !== undefined} task={visitTask ?? null} profile={profile} onClose={() => setVisitTask(undefined)} onSaved={() => void loadData(true)} />
     <IncidentDialog open={incidentOpen} profile={profile} onClose={() => setIncidentOpen(false)} onSaved={() => void loadData(true)} />
@@ -410,6 +411,12 @@ function navItems(t: (sr: string, en: string) => string): Array<{ id: Workspace;
     { id: "finder", label: t("Biračko mesto", "Polling station"), short: t("Pronađi", "Find"), icon: <Search /> },
     { id: "expenses", label: t("Troškovi", "Expenses"), short: t("Troškovi", "Costs"), icon: <Receipt /> },
   ];
+}
+
+function roleWorkspaces(role: UserRole): Workspace[] {
+  if (role === "canvasser") return ["field", "leaderboard", "finder", "expenses"];
+  if (role === "poll_watcher") return ["watcher", "finder", "expenses"];
+  return ["field", "watcher", "leaderboard", "finder", "expenses"];
 }
 
 function workspaceEyebrow(workspace: Workspace, t: (sr: string, en: string) => string) {

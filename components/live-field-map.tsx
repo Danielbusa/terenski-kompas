@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Navigation, WifiOff } from "lucide-react";
+import { LoaderCircle, LocateFixed, MapPin, Navigation, WifiOff } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 
 export type FieldTask = {
@@ -29,9 +29,11 @@ export function LiveFieldMap({ tasks, visits, onSelectTask }: { tasks: FieldTask
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<unknown>(null);
   const layerRef = useRef<unknown>(null);
+  const locationLayerRef = useRef<unknown>(null);
   const [mapReady, setMapReady] = useState(false);
   const [selected, setSelected] = useState<FieldTask | null>(null);
   const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+  const [locating, setLocating] = useState(false);
   const { t } = useLanguage();
 
   useEffect(() => {
@@ -102,8 +104,26 @@ export function LiveFieldMap({ tasks, visits, onSelectTask }: { tasks: FieldTask
     return () => { cancelled = true; };
   }, [tasks, visits, t, mapReady]);
 
+  const locateUser = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      const leaflet = await import("leaflet");
+      const map = mapRef.current as ReturnType<typeof leaflet.map> | null;
+      if (!map) return setLocating(false);
+      const oldLayer = locationLayerRef.current as { remove?: () => void } | null;
+      oldLayer?.remove?.();
+      const group = leaflet.layerGroup().addTo(map);
+      leaflet.circle([coords.latitude, coords.longitude], { radius: Math.max(coords.accuracy, 25), color: "#ef5b38", weight: 1, fillOpacity: .08 }).addTo(group);
+      leaflet.circleMarker([coords.latitude, coords.longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#ef5b38", fillOpacity: 1 }).bindTooltip(t("Tvoja trenutna lokacija", "Your current location")).addTo(group);
+      locationLayerRef.current = group;
+      map.setView([coords.latitude, coords.longitude], 16, { animate: true });
+      setLocating(false);
+    }, () => setLocating(false), { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 });
+  };
+
   return <section className="live-map-card">
-    <div className="live-map-toolbar"><span className={offline ? "offline" : "online"}>{offline ? <WifiOff /> : <MapPin />}{offline ? t("Selo režim · keširana mapa", "Village mode · cached map") : t("OpenStreetMap · uživo", "OpenStreetMap · live")}</span><small>{t("Pregledani delovi mape čuvaju se za rad bez signala.", "Viewed map areas are cached for offline use.")}</small></div>
+    <div className="live-map-toolbar"><span className={offline ? "offline" : "online"}>{offline ? <WifiOff /> : <MapPin />}{offline ? t("Selo režim · keširana mapa", "Village mode · cached map") : t("OpenStreetMap · uživo", "OpenStreetMap · live")}</span><button type="button" className="locate-button" onClick={locateUser} disabled={locating}>{locating ? <LoaderCircle className="spin" /> : <LocateFixed />}{t("Trenutna lokacija", "Current location")}</button></div>
     <div ref={elementRef} className="leaflet-map" aria-label={t("Mapa terenskih zadataka", "Field task map")} />
     {selected && <div className="map-task-card"><div><small>{selected.city_village}</small><h3>{selected.title}</h3><p>{selected.address}</p></div><div><button type="button" onClick={() => onSelectTask(selected)}>{t("Zabeleži posetu", "Log visit")}</button><a href={`https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=;${selected.latitude},${selected.longitude}`} target="_blank" rel="noreferrer"><Navigation /> {t("Ruta", "Route")}</a></div></div>}
   </section>;
