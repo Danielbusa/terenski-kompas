@@ -24,8 +24,9 @@ export type VisitMarker = {
   status: string;
   completed_at: string;
 };
+export type TourStop={id:string;date:string;municipality:string;location_name:string;status:string;latitude:number|null;longitude:number|null};
 
-export function LiveFieldMap({ tasks, visits, onSelectTask }: { tasks: FieldTask[]; visits: VisitMarker[]; onSelectTask: (task: FieldTask) => void }) {
+export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { tasks: FieldTask[]; visits: VisitMarker[];tourStops?:TourStop[]; onSelectTask: (task: FieldTask) => void }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<unknown>(null);
   const layerRef = useRef<unknown>(null);
@@ -99,10 +100,11 @@ export function LiveFieldMap({ tasks, visits, onSelectTask }: { tasks: FieldTask
           .bindTooltip(visit.address || t("Zabeležena poseta", "Recorded visit"))
           .addTo(layer);
       }
+      for(const stop of tourStops){if(stop.latitude==null||stop.longitude==null)continue;const point:[number,number]=[stop.latitude,stop.longitude];coordinates.push(point);leaflet.marker(point,{icon:leaflet.divIcon({className:"tour-marker-shell",html:`<span class="tour-marker ${stop.status}">★</span>`,iconSize:[34,34],iconAnchor:[17,17]})}).bindTooltip(`${stop.location_name} · ${stop.municipality} · ${stop.date}`).addTo(layer)}
       if (coordinates.length) map.fitBounds(leaflet.latLngBounds(coordinates), { padding: [38, 38], maxZoom: 15 });
     });
     return () => { cancelled = true; };
-  }, [tasks, visits, t, mapReady]);
+  }, [tasks, visits, tourStops, t, mapReady]);
 
   const locateUser = () => {
     if (!navigator.geolocation) return;

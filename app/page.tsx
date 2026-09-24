@@ -1,13 +1,13 @@
 "use client";
 
-/* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-location-assign-relative-destination */
+/* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-location-assign-relative-destination, react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, LogOut, Map, MapPin, Navigation, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth-gate";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
-import { LiveFieldMap, type FieldTask, type VisitMarker } from "@/components/live-field-map";
+import { LiveFieldMap, type FieldTask, type TourStop, type VisitMarker } from "@/components/live-field-map";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-type Workspace = "field" | "watcher" | "leaderboard" | "finder" | "expenses";
+type Workspace = "field" | "watcher" | "leaderboard" | "finder" | "expenses" | "help";
 type ApprovalStatus = "pending" | "approved" | "rejected";
 type UserRole = "admin" | "coordinator" | "canvasser" | "poll_watcher";
 
@@ -98,9 +98,11 @@ type DashboardData = {
   expenses: Expense[];
   leaderboard: LeaderboardRow[];
   activity: ActivityLog[];
+  tourStops: TourStop[];
+  documents: {id:string;title_sr:string;title_en:string;content_sr:string;content_en:string;category:string}[];
 };
 
-const emptyData: DashboardData = { tasks: [], visits: [], incidents: [], expenses: [], leaderboard: [], activity: [] };
+const emptyData: DashboardData = { tasks: [], visits: [], incidents: [], expenses: [], leaderboard: [], activity: [],tourStops:[],documents:[] };
 
 export default function HomePage() {
   return <AuthGate><OperationsDashboard /></AuthGate>;
@@ -134,7 +136,7 @@ function OperationsDashboard() {
       return;
     }
 
-    const [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult] = await Promise.all([
+    const [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult,tourResult,docsResult] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email,role,approval_status,assigned_region,faculty").eq("id", userId).single(),
       supabase.from("field_tasks").select("id,title,address,city_village,latitude,longitude,status,notes,due_date").order("due_date", { ascending: true, nullsFirst: false }),
       supabase.from("visits").select("id,latitude,longitude,address,status,completed_at").order("completed_at", { ascending: false }).limit(250),
@@ -142,9 +144,11 @@ function OperationsDashboard() {
       supabase.from("travel_expenses").select("id,origin,destination,travel_date,transport_type,amount_rsd,receipt_path,status,admin_note,created_at").order("created_at", { ascending: false }).limit(100),
       supabase.rpc("get_faculty_leaderboard"),
       supabase.from("activity_logs").select("id,action,entity_type,metadata,created_at").order("created_at", { ascending: false }).limit(25),
+      supabase.from("tour_stops").select("id,date,municipality,location_name,status,latitude,longitude").gte("date",new Date().toISOString().slice(0,10)).order("date").limit(100),
+      supabase.from("field_documents").select("id,title_sr,title_en,content_sr,content_en,category").order("display_order"),
     ]);
 
-    const firstError = [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult].find((result) => result.error)?.error;
+    const firstError = [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult,tourResult,docsResult].find((result) => result.error)?.error;
     if (firstError) toast.error(t("Podaci nisu potpuno učitani.", "Some data could not be loaded."), { description: firstError.message });
     if (profileResult.data) setProfile(profileResult.data as Profile);
     const next: DashboardData = {
@@ -154,6 +158,7 @@ function OperationsDashboard() {
       expenses: (expensesResult.data ?? []).map((item) => ({ ...item, amount_rsd: Number(item.amount_rsd) })) as Expense[],
       leaderboard: (leaderboardResult.data ?? []).map((item: LeaderboardRow) => ({ ...item, completed_visits: Number(item.completed_visits), active_volunteers: Number(item.active_volunteers), follow_ups: Number(item.follow_ups) })),
       activity: (activityResult.data ?? []) as ActivityLog[],
+      tourStops:(tourResult.data??[]) as TourStop[],documents:(docsResult.data??[]) as DashboardData["documents"],
     };
     setData(next);
     await cacheData(`dashboard:${userId}`, next);
@@ -253,6 +258,7 @@ function OperationsDashboard() {
         {workspace === "leaderboard" && <LeaderboardWorkspace rows={data.leaderboard} />}
         {workspace === "finder" && <PollingStationFinder />}
         {workspace === "expenses" && <ExpensesWorkspace profile={profile} expenses={data.expenses} onSaved={() => void loadData(true)} />}
+        {workspace === "help" && <HelpWorkspace documents={data.documents}/>} 
       </div>
       <nav className="ops-mobile-nav">{visibleNav.slice(0, 4).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.icon}<span>{item.short}</span></button>)}<a href="/profile"><Settings /><span>{t("Profil", "Profile")}</span></a></nav>
     </main>
@@ -268,6 +274,7 @@ function FieldWorkspace({ data, pending, onVisit }: { data: DashboardData; pendi
   const completedToday = data.visits.filter((visit) => isToday(visit.completed_at)).length;
   return <div className="workspace-stack">
     <section className="metric-row"><Metric icon={<ClipboardList />} label={t("Dodeljeni zadaci", "Assigned tasks")} value={openTasks.length} /><Metric icon={<CheckCircle2 />} label={t("Posete danas", "Visits today")} value={completedToday} /><Metric icon={<MapPin />} label={t("Ukupno poseta", "Total visits")} value={data.visits.length} /><Metric icon={<WifiOff />} label={t("Čeka sinhronizaciju", "Queued offline")} value={pending} /></section>
+    <section className="data-panel tour-panel"><div className="panel-heading"><div><p className="eyebrow">{t("TURNEJA","TOUR SCHEDULE")}</p><h2>{t("Sledeće stanice i akcije","Upcoming stops and actions")}</h2></div><Navigation/></div>{data.tourStops.length===0?<EmptyState icon={<MapPin/>} title={t("Nema zakazanih stanica","No scheduled stops")} text={t("Koordinator će ovde objaviti sledeću rutu.","Your coordinator will publish the next route here.")}/>:<div className="tour-stop-list">{data.tourStops.map(stop=><article key={stop.id}><time>{new Intl.DateTimeFormat(language==="sr"?"sr-RS":"en-GB",{day:"2-digit",month:"short"}).format(new Date(`${stop.date}T12:00:00`))}</time><div><b>{stop.location_name}</b><p>{stop.municipality}</p></div><span className={`status-pill ${stop.status}`}>{stop.status.replaceAll("_"," ")}</span></article>)}</div>}</section>
     <div className="field-layout"><LiveFieldMap tasks={data.tasks} visits={data.visits} onSelectTask={onVisit} /><aside className="task-list-panel"><div className="panel-heading"><div><p className="eyebrow">{t("MOJI ZADACI", "MY TASKS")}</p><h2>{t("Sledeće adrese", "Next addresses")}</h2></div><Button size="sm" onClick={() => onVisit(null)}><Plus /> {t("Poseta", "Visit")}</Button></div>{openTasks.length === 0 ? <EmptyState icon={<ClipboardList />} title={t("Nema otvorenih zadataka", "No open tasks")} text={t("Koordinator još nije dodelio nove adrese.", "Your coordinator has not assigned new addresses yet.")} /> : <div className="task-list">{openTasks.map((task) => <article key={task.id}><span className={`task-state ${task.status}`} /><div><b>{task.title}</b><p>{task.address}, {task.city_village}</p><small>{task.due_date ? new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium" }).format(new Date(`${task.due_date}T12:00:00`)) : t("Bez roka", "No due date")}</small></div><button type="button" onClick={() => onVisit(task)}><ArrowRight /></button></article>)}</div>}</aside></div>
     <section className="data-panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">{t("AKTIVNOST", "ACTIVITY")}</p><h2>{t("Nedavne terenske promene", "Recent field updates")}</h2></div></div>{data.activity.length === 0 ? <EmptyState icon={<RefreshCw />} title={t("Nema aktivnosti", "No activity yet")} text={t("Sinhronizovane posete i prijave pojaviće se ovde.", "Synced visits and reports will appear here.")} /> : <div className="activity-list">{data.activity.map((entry) => <article key={entry.id}><RefreshCw /><div><b>{activityLabel(entry.action, t)}</b><small>{new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.created_at))}</small></div></article>)}</div>}</section>
   </div>;
@@ -409,6 +416,8 @@ function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; tex
   return <div className="ops-empty"><span>{icon}</span><h3>{title}</h3><p>{text}</p></div>;
 }
 
+function HelpWorkspace({documents}:{documents:DashboardData["documents"]}){const{t,language}=useLanguage();return <div className="help-layout"><section className="data-panel"><div className="panel-heading"><div><p className="eyebrow">{t("POMOĆ I PODRŠKA","HELP & SUPPORT")}</p><h2>{t("Smernice za bezbedan terenski rad","Safe field-work guidelines")}</h2></div><ShieldCheck/></div><div className="guideline-list">{documents.map(doc=><article key={doc.id}><span><ShieldCheck/></span><div><small>{doc.category}</small><h3>{language==="sr"?doc.title_sr:doc.title_en}</h3><p>{language==="sr"?doc.content_sr:doc.content_en}</p></div></article>)}</div></section><aside className="support-card"><h3>{t("Potrebna je pomoć?","Need help?")}</h3><p>{t("U hitnom slučaju pozovite 112. Za operativna pitanja obratite se svom regionalnom koordinatoru.","Call 112 in an emergency. Contact your regional coordinator for operational questions.")}</p></aside></div>}
+
 function navItems(t: (sr: string, en: string) => string): Array<{ id: Workspace; label: string; short: string; icon: ReactNode }> {
   return [
     { id: "field", label: t("Teren", "Field"), short: t("Teren", "Field"), icon: <Map /> },
@@ -416,21 +425,22 @@ function navItems(t: (sr: string, en: string) => string): Array<{ id: Workspace;
     { id: "leaderboard", label: t("Fakulteti", "Faculties"), short: t("Tabela", "Board"), icon: <Trophy /> },
     { id: "finder", label: t("Biračko mesto", "Polling station"), short: t("Pronađi", "Find"), icon: <Search /> },
     { id: "expenses", label: t("Troškovi", "Expenses"), short: t("Troškovi", "Costs"), icon: <Receipt /> },
+    { id: "help", label: t("Pomoć", "Help"), short: t("Pomoć", "Help"), icon: <ShieldCheck /> },
   ];
 }
 
 function roleWorkspaces(role: UserRole): Workspace[] {
-  if (role === "canvasser") return ["field", "leaderboard", "finder", "expenses"];
-  if (role === "poll_watcher") return ["watcher", "finder", "expenses"];
-  return ["field", "watcher", "leaderboard", "finder", "expenses"];
+  if (role === "canvasser") return ["field", "leaderboard", "finder", "expenses","help"];
+  if (role === "poll_watcher") return ["watcher", "finder", "expenses","help"];
+  return ["field", "watcher", "leaderboard", "finder", "expenses","help"];
 }
 
 function workspaceEyebrow(workspace: Workspace, t: (sr: string, en: string) => string) {
-  return ({ field: t("TERENSKI RAD", "FIELD OPERATIONS"), watcher: t("IZBORNI NADZOR", "ELECTION MONITORING"), leaderboard: t("GAMIFIKACIJA", "GAMIFICATION"), finder: t("BRZA PRETRAGA", "INSTANT LOOKUP"), expenses: t("REFUNDACIJE", "REIMBURSEMENTS") })[workspace];
+  return ({ field: t("TERENSKI RAD", "FIELD OPERATIONS"), watcher: t("IZBORNI NADZOR", "ELECTION MONITORING"), leaderboard: t("GAMIFIKACIJA", "GAMIFICATION"), finder: t("BRZA PRETRAGA", "INSTANT LOOKUP"), expenses: t("REFUNDACIJE", "REIMBURSEMENTS"),help:t("POMOĆ I PODRŠKA","HELP & SUPPORT") })[workspace];
 }
 
 function workspaceDescription(workspace: Workspace, t: (sr: string, en: string) => string) {
-  return ({ field: t("Dodeljene adrese, mapa i evidencija obilaska.", "Assigned addresses, map, and visit logging."), watcher: t("Prijave i status incidenata sa biračkih mesta.", "Polling-station incident reports and statuses."), leaderboard: t("Učinak fakultetskih timova iz stvarnih terenskih podataka.", "Faculty team performance from live field data."), finder: t("Pronađi verifikovano biračko mesto i lokalnog koordinatora.", "Find a verified polling station and local coordinator."), expenses: t("Prijavi kartu ili putni trošak i prati odobrenje.", "Submit travel costs and track approval.") })[workspace];
+  return ({ field: t("Dodeljene adrese, mapa i evidencija obilaska.", "Assigned addresses, map, and visit logging."), watcher: t("Prijave i status incidenata sa biračkih mesta.", "Polling-station incident reports and statuses."), leaderboard: t("Učinak fakultetskih timova iz stvarnih terenskih podataka.", "Faculty team performance from live field data."), finder: t("Pronađi verifikovano biračko mesto i lokalnog koordinatora.", "Find a verified polling station and local coordinator."), expenses: t("Prijavi kartu ili putni trošak i prati odobrenje.", "Submit travel costs and track approval."),help:t("Proverene smernice, privatnost i bezbednost na terenu.","Verified guidance, privacy, and field safety.") })[workspace];
 }
 
 function roleLabel(role: UserRole, language: "sr" | "en") {
