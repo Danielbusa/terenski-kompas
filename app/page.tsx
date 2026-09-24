@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, LogOut, Map, MapPin, Navigation, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth-gate";
+import { AddressCoordinatePicker } from "@/components/address-coordinate-picker";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
 import { LiveFieldMap, type FieldTask, type TourStop, type VisitMarker } from "@/components/live-field-map";
 import { Button } from "@/components/ui/button";
@@ -144,7 +145,7 @@ function OperationsDashboard() {
       supabase.from("travel_expenses").select("id,origin,destination,travel_date,transport_type,amount_rsd,receipt_path,status,admin_note,created_at").order("created_at", { ascending: false }).limit(100),
       supabase.rpc("get_faculty_leaderboard"),
       supabase.from("activity_logs").select("id,action,entity_type,metadata,created_at").order("created_at", { ascending: false }).limit(25),
-      supabase.from("tour_stops").select("id,date,municipality,location_name,status,latitude,longitude").gte("date",new Date().toISOString().slice(0,10)).order("date").limit(100),
+      supabase.from("tour_stops").select("id,date,municipality,location_name,status,latitude,longitude").order("date",{ascending:false}).limit(500),
       supabase.from("field_documents").select("id,title_sr,title_en,content_sr,content_en,category").order("display_order"),
     ]);
 
@@ -176,6 +177,7 @@ function OperationsDashboard() {
       .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, () => void loadData(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "incidents" }, () => void loadData(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "travel_expenses" }, () => void loadData(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "tour_stops" }, () => void loadData(true))
       .subscribe();
     const handleOnline = async () => {
       setOnline(true);
@@ -355,7 +357,9 @@ function VisitDialog({ open, task, profile, onClose, onSaved }: { open: boolean;
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const id = crypto.randomUUID();
-    const payload = { id, canvasser_id: profile.id, task_id: task?.id ?? null, latitude: Number(form.get("latitude")), longitude: Number(form.get("longitude")), address: String(form.get("address") ?? "").trim() || null, city_village: String(form.get("city_village") ?? "").trim(), status: String(form.get("status") ?? "visited_neutral"), notes: String(form.get("notes") ?? "").trim() || null, follow_up_requested: form.get("follow_up") === "yes", completed_at: new Date().toISOString() };
+    const latitude=Number(form.get("latitude")),longitude=Number(form.get("longitude"));
+    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!String(form.get("latitude")??"")||!String(form.get("longitude")??"")){toast.error(t("Izaberite adresu ili upotrebite GPS lokaciju.","Select an address or use your GPS location."));return}
+    const payload = { id, canvasser_id: profile.id, task_id: task?.id ?? null, latitude, longitude, address: String(form.get("address") ?? "").trim() || null, city_village: String(form.get("city_village") ?? "").trim() || profile.assigned_region || "Srbija", status: String(form.get("status") ?? "visited_neutral"), notes: String(form.get("notes") ?? "").trim() || null, follow_up_requested: form.get("follow_up") === "yes", completed_at: new Date().toISOString() };
     setBusy(true);
     const supabase = getSupabase();
     if (!supabase || !navigator.onLine) {
@@ -373,7 +377,7 @@ function VisitDialog({ open, task, profile, onClose, onSaved }: { open: boolean;
     }
     setBusy(false);
   };
-  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><DialogTitle>{t("Zabeleži posetu", "Log a visit")}</DialogTitle><DialogDescription>{task ? `${task.title} · ${task.address}` : t("Unesi stvarne podatke sa terena.", "Enter real field data.")}</DialogDescription></DialogHeader><div className="form-grid"><div className="form-wide"><Label>{t("Adresa", "Address")}</Label><Input name="address" defaultValue={task?.address ?? ""} required /></div><div><Label>{t("Mesto", "City or village")}</Label><Input name="city_village" defaultValue={task?.city_village ?? profile.assigned_region ?? ""} required /></div><div><Label>{t("Ishod", "Outcome")}</Label><Select name="status" defaultValue="visited_neutral"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="visited_supporter">{t("Podržava", "Supporter")}</SelectItem><SelectItem value="visited_neutral">{t("Neodlučan", "Neutral")}</SelectItem><SelectItem value="visited_hostile">{t("Protiv", "Hostile")}</SelectItem><SelectItem value="not_home">{t("Nije kod kuće", "Not home")}</SelectItem><SelectItem value="refused">{t("Odbio razgovor", "Refused")}</SelectItem></SelectContent></Select></div><div><Label>{t("Praćenje", "Follow-up")}</Label><Select name="follow_up" defaultValue="no"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="no">{t("Nije potrebno", "Not needed")}</SelectItem><SelectItem value="yes">{t("Potrebno", "Required")}</SelectItem></SelectContent></Select></div><div><Label>{t("Geografska širina", "Latitude")}</Label><Input name="latitude" type="number" step="any" defaultValue={task?.latitude ?? ""} required /></div><div><Label>{t("Geografska dužina", "Longitude")}</Label><Input name="longitude" type="number" step="any" defaultValue={task?.longitude ?? ""} required /></div><div className="form-wide"><Label>{t("Beleška", "Notes")}</Label><Textarea name="notes" /></div></div><DialogFooter><Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />} {t("Sačuvaj posetu", "Save visit")}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><DialogTitle>{t("Zabeleži posetu", "Log a visit")}</DialogTitle><DialogDescription>{task ? `${task.title} · ${task.address}` : t("Pretražite adresu ili upotrebite GPS lokaciju.", "Search for an address or use your GPS location.")}</DialogDescription></DialogHeader><div className="form-grid"><AddressCoordinatePicker address={task?.address??""} locality={task?.city_village??profile.assigned_region??""} latitude={task?.latitude??null} longitude={task?.longitude??null}/><div><Label htmlFor="visit-outcome">{t("Ishod", "Outcome")}</Label><select id="visit-outcome" name="status" className="native-field-select" defaultValue="visited_neutral"><option value="visited_supporter">{t("Podržava", "Supporter")}</option><option value="visited_neutral">{t("Neodlučan", "Neutral")}</option><option value="visited_hostile">{t("Protiv", "Hostile")}</option><option value="not_home">{t("Nije kod kuće", "Not home")}</option><option value="refused">{t("Odbio razgovor", "Refused")}</option></select></div><div><Label htmlFor="visit-follow-up">{t("Praćenje", "Follow-up")}</Label><select id="visit-follow-up" name="follow_up" className="native-field-select" defaultValue="no"><option value="no">{t("Nije potrebno", "Not needed")}</option><option value="yes">{t("Potrebno", "Required")}</option></select></div><div className="form-wide"><Label>{t("Beleška", "Notes")}</Label><Textarea name="notes" /></div></div><DialogFooter><Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />} {t("Sačuvaj posetu", "Save visit")}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function IncidentDialog({ open, profile, onClose, onSaved }: { open: boolean; profile: Profile; onClose: () => void; onSaved: () => void }) {

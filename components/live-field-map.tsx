@@ -80,7 +80,8 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { ta
       layer.clearLayers();
       const coordinates: [number, number][] = [];
       for (const task of tasks) {
-        const point: [number, number] = [task.latitude, task.longitude];
+        const point: [number, number] = [Number(task.latitude), Number(task.longitude)];
+        if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
         coordinates.push(point);
         const marker = leaflet.marker(point, {
           icon: leaflet.divIcon({
@@ -94,13 +95,14 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { ta
         marker.on("click", () => setSelected(task));
       }
       for (const visit of visits) {
-        const point: [number, number] = [visit.latitude, visit.longitude];
+        const point: [number, number] = [Number(visit.latitude), Number(visit.longitude)];
+        if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
         coordinates.push(point);
         leaflet.circleMarker(point, { radius: 6, color: "#fff", weight: 2, fillColor: "#397968", fillOpacity: .9 })
           .bindTooltip(visit.address || t("Zabeležena poseta", "Recorded visit"))
           .addTo(layer);
       }
-      for(const stop of tourStops){if(stop.latitude==null||stop.longitude==null)continue;const point:[number,number]=[stop.latitude,stop.longitude];coordinates.push(point);leaflet.marker(point,{icon:leaflet.divIcon({className:"tour-marker-shell",html:`<span class="tour-marker ${stop.status}">★</span>`,iconSize:[34,34],iconAnchor:[17,17]})}).bindTooltip(`${stop.location_name} · ${stop.municipality} · ${stop.date}`).addTo(layer)}
+      for(const stop of tourStops){if(stop.latitude==null||stop.longitude==null)continue;const point:[number,number]=[Number(stop.latitude),Number(stop.longitude)];if(!Number.isFinite(point[0])||!Number.isFinite(point[1]))continue;coordinates.push(point);leaflet.marker(point,{icon:leaflet.divIcon({className:"tour-marker-shell",html:`<span class="tour-marker ${stop.status}">★</span>`,iconSize:[34,34],iconAnchor:[17,17]})}).bindTooltip(`${stop.location_name} · ${stop.municipality} · ${stop.date}`).addTo(layer)}
       if (coordinates.length) map.fitBounds(leaflet.latLngBounds(coordinates), { padding: [38, 38], maxZoom: 15 });
     });
     return () => { cancelled = true; };
