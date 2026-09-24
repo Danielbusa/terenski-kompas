@@ -101,6 +101,24 @@ alter table public.activity_logs enable row level security;
 alter table public.polling_stations enable row level security;
 alter table public.travel_expenses enable row level security;
 
+-- Replace legacy role-only read policies so pending accounts cannot bypass the
+-- holding screen by calling Supabase directly.
+drop policy if exists "field staff read own points" on public.canvassing_points;
+create policy "approved staff read permitted points" on public.canvassing_points for select to authenticated
+using ((canvasser_id = auth.uid() and public.is_approved_user()) or public.is_admin_or_coordinator());
+
+drop policy if exists "coordinators read recruits" on public.recruits;
+create policy "approved staff read permitted recruits" on public.recruits for select to authenticated
+using ((recruiter_id = auth.uid() and public.is_approved_user()) or public.is_admin_or_coordinator());
+
+drop policy if exists "incident visibility" on public.incidents;
+create policy "approved staff read permitted incidents" on public.incidents for select to authenticated
+using ((reporter_id = auth.uid() and public.is_approved_user()) or public.is_admin_or_coordinator());
+
+drop policy if exists "canvassers read own donations" on public.donations;
+create policy "approved staff read permitted donations" on public.donations for select to authenticated
+using ((canvasser_id = auth.uid() and public.is_approved_user()) or public.is_admin_or_coordinator());
+
 grant select on public.field_tasks, public.visits, public.activity_logs,
   public.polling_stations, public.travel_expenses to authenticated;
 grant insert on public.visits, public.activity_logs, public.travel_expenses to authenticated;
