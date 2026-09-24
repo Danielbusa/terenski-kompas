@@ -11,6 +11,7 @@ function safeNext(params: URLSearchParams) {
 
 export default function AuthCallbackPage() {
   useEffect(() => {
+    if (typeof window === "undefined") return;
     let active = true;
     void (async () => {
       const supabase = getSupabase();
@@ -27,8 +28,9 @@ export default function AuthCallbackPage() {
       const session = "session" in result.data ? result.data.session : null;
       const needsPassword = params.get("setup") === "password" && !session?.user.user_metadata?.password_configured;
       window.location.replace(session ? (needsPassword ? "/profile?setup=password" : safeNext(params)) : "/login?error=link");
-    })().catch(() => {
-      if (active) window.location.replace("/login?error=link");
+    })().catch((error) => {
+      console.error("Supabase auth callback failed:", error);
+      if (active) window.location.replace(`/login?error=${encodeURIComponent(error instanceof Error ? error.message : "link")}`);
     });
     return () => { active = false; };
   }, []);

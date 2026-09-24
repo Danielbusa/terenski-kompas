@@ -31,6 +31,7 @@ export default function LoginPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (typeof window === "undefined") return;
     const supabase = getSupabase();
     if (!supabase) {
       const text = t("Prijava trenutno nije dostupna. Veza nije podešena.", "Sign-in is unavailable because the connection is not configured.");
@@ -82,12 +83,14 @@ export default function LoginPage() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      if (!data.session) throw new Error(t("Prijava je uspela, ali sesija nije kreirana.", "Sign-in succeeded, but no session was created."));
       toast.success(t("Uspešno si prijavljen/a.", "Signed in successfully."));
-      window.location.replace(nextPath());
+      window.location.href = nextPath();
     } catch (error) {
       const details = error instanceof Error ? error.message : t("Prijava nije završena.", "Sign-in was not completed.");
+      console.error("Supabase authentication failed:", error);
       setStatus({ tone: "error", text: details });
       toast.error(t("Prijava nije završena.", "Sign-in was not completed."), { description: details });
     } finally {
