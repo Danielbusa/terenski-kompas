@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-location-assign-relative-destination, react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, LogOut, Map, MapPin, Navigation, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, WifiOff } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, LogOut, Map, MapPin, Navigation, PanelLeftClose, PanelLeftOpen, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, UserRound, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth-gate";
 import { AddressCoordinatePicker } from "@/components/address-coordinate-picker";
@@ -120,6 +120,7 @@ function OperationsDashboard() {
   const [pending, setPending] = useState(0);
   const [visitTask, setVisitTask] = useState<FieldTask | null | undefined>(undefined);
   const [incidentOpen, setIncidentOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   const loadData = useCallback(async (quiet = false) => {
     const supabase = getSupabase();
@@ -241,8 +242,9 @@ function OperationsDashboard() {
 
   const firstName = profile.full_name.trim().split(/\s+/)[0] || profile.full_name;
   const visibleNav = navItems(t).filter((item) => roleWorkspaces(profile.role).includes(item.id));
-  return <div className="ops-shell">
+  return <div className={`ops-shell ${railCollapsed ? "rail-collapsed" : ""}`}>
     <aside className="ops-rail">
+      <button type="button" className="rail-collapse" onClick={() => setRailCollapsed((value) => !value)} aria-label={railCollapsed ? t("Proširi navigaciju", "Expand navigation") : t("Skupi navigaciju", "Collapse navigation")}>{railCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button>
       <span className="brand-mark"><Compass /></span>
       <nav aria-label={t("Glavna navigacija", "Main navigation")}>{visibleNav.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)} title={item.label}>{item.icon}</button>)}{["admin","coordinator"].includes(profile.role) && <a href="/admin" title={t("Centrala", "Admin center")}><BarChart3 /></a>}<a href="/profile" title={t("Profil i podešavanja", "Profile & settings")}><Settings /></a></nav>
       <div className="rail-account"><a className="profile-avatar-button" href="/profile">{initials(profile.full_name)}</a><button type="button" className="rail-logout" onClick={signOut} title={t("Odjavi se", "Log out")}><LogOut /></button></div>
@@ -251,10 +253,10 @@ function OperationsDashboard() {
       <header className="ops-header">
         <div className="ops-brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>{roleLabel(profile.role, language)} · {profile.assigned_region || t("Region nije dodeljen", "Region not assigned")}</small></div></div>
         <nav className="ops-tabs" aria-label={t("Radni prostori", "Workspaces")}>{visibleNav.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.label}</button>)}</nav>
-        <div className="ops-actions"><LanguageToggle compact /><button type="button" className={online ? "network-state online" : "network-state offline"} onClick={() => void syncNow()}>{online ? <Signal /> : <CloudOff />}{online ? t("Na mreži", "Online") : t("Selo režim", "Village mode")}{pending > 0 && <b>{pending}</b>}</button></div>
+        <div className="ops-actions"><label className="top-search"><Search /><input type="search" aria-label={t("Pretraži kontrolnu tablu", "Search dashboard")} placeholder={t("Pretraga", "Search")} /></label><LanguageToggle compact /><button type="button" className="top-icon-button" onClick={() => void loadData()} disabled={refreshing} aria-label={t("Osveži", "Refresh")}><RefreshCw className={refreshing ? "spin" : ""} /></button><button type="button" className={online ? "network-state online" : "network-state offline"} onClick={() => void syncNow()}>{online ? <Signal /> : <CloudOff />}{online ? t("Na mreži", "Online") : t("Selo režim", "Village mode")}{pending > 0 && <b>{pending}</b>}</button><a className="top-profile" href="/profile" aria-label={t("Profil i podešavanja", "Profile and settings")}><span>{initials(profile.full_name)}</span><UserRound /></a></div>
       </header>
       <div className="ops-content">
-        <div className="ops-welcome"><div><p className="eyebrow">{workspaceEyebrow(workspace, t)}</p><h1>{t(`Zdravo, ${firstName}.`, `Hello, ${firstName}.`)}</h1><p>{workspaceDescription(workspace, t)}</p></div><Button variant="outline" onClick={() => void loadData()} disabled={refreshing}><RefreshCw className={refreshing ? "spin" : ""} /> {t("Osveži", "Refresh")}</Button></div>
+        <div className="ops-welcome"><div><p className="eyebrow">{workspaceEyebrow(workspace, t)}</p><h1>{t(`Zdravo, ${firstName}.`, `Hello, ${firstName}.`)}</h1><p>{workspaceDescription(workspace, t)}</p></div></div>
         {workspace === "field" && <FieldWorkspace data={data} pending={pending} onVisit={(task) => setVisitTask(task)} />}
         {workspace === "watcher" && <WatcherWorkspace incidents={data.incidents} onReport={() => setIncidentOpen(true)} />}
         {workspace === "leaderboard" && <LeaderboardWorkspace rows={data.leaderboard} />}
@@ -413,7 +415,7 @@ function IncidentDialog({ open, profile, onClose, onSaved }: { open: boolean; pr
 }
 
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
-  return <div className="ops-metric"><span>{icon}</span><div><strong>{value}</strong><p>{label}</p></div></div>;
+  return <div className="ops-metric"><div className="metric-title"><span>{icon}</span><p>{label}</p></div><div className="metric-value"><strong>{value}</strong><small><i /> {Number(value) > 0 ? "+" : ""}{value} {label.toLowerCase()}</small></div><span className="metric-ghost" aria-hidden="true">{icon}</span></div>;
 }
 
 function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
