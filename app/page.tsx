@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
+import { EmptyState, StatCard as Metric } from "@/components/ui/dashboard";
 import { cacheData, enqueue, flushQueue, readCachedData, readQueue } from "@/lib/offline-queue";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -412,14 +413,6 @@ function IncidentDialog({ open, profile, onClose, onSaved }: { open: boolean; pr
     setBusy(false);
   };
   return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><DialogTitle>{t("Prijavi incident", "Report an incident")}</DialogTitle><DialogDescription>{t("Vreme i lokacija se dodaju automatski kada su dostupni.", "Time and location are added automatically when available.")}</DialogDescription></DialogHeader><div className="form-grid"><div><Label>{t("Biračko mesto", "Polling station")}</Label><Input name="polling_station_number" required /></div><div><Label>{t("Opština", "Municipality")}</Label><Input name="municipality" required /></div><div><Label>{t("Ozbiljnost", "Severity")}</Label><Select name="severity" defaultValue="medium"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">{t("Niska", "Low")}</SelectItem><SelectItem value="medium">{t("Srednja", "Medium")}</SelectItem><SelectItem value="critical">{t("Kritična", "Critical")}</SelectItem></SelectContent></Select></div><div><Label>{t("Foto ili video", "Photo or video")}</Label><Input name="media" type="file" accept="image/*,video/mp4,video/quicktime" /></div><div className="form-wide"><Label>{t("Naslov", "Title")}</Label><Input name="title" required /></div><div className="form-wide"><Label>{t("Opis", "Description")}</Label><Textarea name="description" required /></div></div><DialogFooter><Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <AlertTriangle />} {t("Pošalji prijavu", "Submit report")}</Button></DialogFooter></form></DialogContent></Dialog>;
-}
-
-function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
-  return <div className="ops-metric"><div className="metric-title"><span>{icon}</span><p>{label}</p></div><div className="metric-value"><strong>{value}</strong><small><i /> {Number(value) > 0 ? "+" : ""}{value} {label.toLowerCase()}</small></div><span className="metric-ghost" aria-hidden="true">{icon}</span></div>;
-}
-
-function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
-  return <div className="ops-empty"><span>{icon}</span><h3>{title}</h3><p>{text}</p></div>;
 }
 
 function HelpWorkspace({documents}:{documents:DashboardData["documents"]}){const{t,language}=useLanguage();return <div className="help-layout"><section className="data-panel"><div className="panel-heading"><div><p className="eyebrow">{t("POMOĆ I PODRŠKA","HELP & SUPPORT")}</p><h2>{t("Smernice za bezbedan terenski rad","Safe field-work guidelines")}</h2></div><ShieldCheck/></div><div className="guideline-list">{documents.map(doc=><article key={doc.id}><span><ShieldCheck/></span><div><small>{doc.category}</small><h3>{language==="sr"?doc.title_sr:doc.title_en}</h3><p>{language==="sr"?doc.content_sr:doc.content_en}</p></div></article>)}</div></section><aside className="support-card"><h3>{t("Potrebna je pomoć?","Need help?")}</h3><p>{t("U hitnom slučaju pozovite 112. Za operativna pitanja obratite se svom regionalnom koordinatoru.","Call 112 in an emergency. Contact your regional coordinator for operational questions.")}</p></aside></div>}

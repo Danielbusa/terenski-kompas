@@ -98,7 +98,7 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { ta
         const point: [number, number] = [Number(visit.latitude), Number(visit.longitude)];
         if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
         coordinates.push(point);
-        leaflet.circleMarker(point, { radius: 6, color: "#fff", weight: 2, fillColor: "#397968", fillOpacity: .9 })
+        leaflet.circleMarker(point, { radius: 6, color: "var(--card)", weight: 2, fillColor: "var(--success)", fillOpacity: .9 })
           .bindTooltip(visit.address || t("Zabeležena poseta", "Recorded visit"))
           .addTo(layer);
       }
@@ -118,8 +118,8 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { ta
       const oldLayer = locationLayerRef.current as { remove?: () => void } | null;
       oldLayer?.remove?.();
       const group = leaflet.layerGroup().addTo(map);
-      leaflet.circle([coords.latitude, coords.longitude], { radius: Math.max(coords.accuracy, 25), color: "#ef5b38", weight: 1, fillOpacity: .08 }).addTo(group);
-      leaflet.circleMarker([coords.latitude, coords.longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#ef5b38", fillOpacity: 1 }).bindTooltip(t("Tvoja trenutna lokacija", "Your current location")).addTo(group);
+      leaflet.circle([coords.latitude, coords.longitude], { radius: Math.max(coords.accuracy, 25), color: "var(--primary)", weight: 1, fillOpacity: .08 }).addTo(group);
+      leaflet.circleMarker([coords.latitude, coords.longitude], { radius: 8, color: "var(--card)", weight: 3, fillColor: "var(--primary)", fillOpacity: 1 }).bindTooltip(t("Tvoja trenutna lokacija", "Your current location")).addTo(group);
       locationLayerRef.current = group;
       map.setView([coords.latitude, coords.longitude], 16, { animate: true });
       setLocating(false);
