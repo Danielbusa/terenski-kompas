@@ -212,7 +212,7 @@ function OperationsDashboard() {
       description: "Open a Terenski Kompas operational workspace without changing data.",
       inputSchema: { type: "object", properties: { workspace: { type: "string", enum: ["field", "watcher", "leaderboard", "finder", "expenses", "admin"] } }, required: ["workspace"], additionalProperties: false },
       annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute(input) {
+      execute(input: unknown) {
         const value = (input as { workspace?: string }).workspace;
         if (value === "admin") { window.location.href = "/admin"; return { status: "opening_admin" }; }
         if (!["field", "watcher", "leaderboard", "finder", "expenses"].includes(value ?? "")) throw new Error("Invalid workspace");

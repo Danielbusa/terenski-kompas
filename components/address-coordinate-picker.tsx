@@ -28,10 +28,11 @@ export function AddressCoordinatePicker({ address = "", locality = "", latitude 
     setSearching(true);
     try {
       const response = await fetch(`/api/geocode?q=${encodeURIComponent(query.trim())}`);
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || t("Pretraga adrese nije uspela.","Address search failed."));
-      setResults(body);
-      if (!body.length) toast.info(t("Nema rezultata u Srbiji.","No results found in Serbia."));
+      const body = await response.json() as Result[] | { error?: string };
+      if (!response.ok) throw new Error((!Array.isArray(body) && body.error) || t("Pretraga adrese nije uspela.","Address search failed."));
+      const matches = Array.isArray(body) ? body : [];
+      setResults(matches);
+      if (!matches.length) toast.info(t("Nema rezultata u Srbiji.","No results found in Serbia."));
     } catch (error) { toast.error(t("Pretraga adrese nije uspela.","Address search failed."),{description:error instanceof Error?error.message:undefined}); }
     finally { setSearching(false); }
   };
