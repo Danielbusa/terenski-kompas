@@ -265,7 +265,6 @@ function OperationsDashboard() {
         {workspace === "expenses" && <ExpensesWorkspace profile={profile} expenses={data.expenses} onSaved={() => void loadData(true)} />}
         {workspace === "help" && <HelpWorkspace documents={data.documents}/>} 
       </div>
-      <nav className="ops-mobile-nav">{visibleNav.slice(0, 4).map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.icon}<span>{item.short}</span></button>)}<a href="/profile"><Settings /><span>{t("Profil", "Profile")}</span></a></nav>
     </main>
     <VisitDialog open={visitTask !== undefined} task={visitTask ?? null} profile={profile} onClose={() => setVisitTask(undefined)} onSaved={() => void loadData(true)} />
     <IncidentDialog open={incidentOpen} profile={profile} onClose={() => setIncidentOpen(false)} onSaved={() => void loadData(true)} />
