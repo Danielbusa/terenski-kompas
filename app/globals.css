@@ -120,6 +120,10 @@
 @media(max-width:900px){.unified-shell .admin-main-tabbed,.unified-shell .settings-main,.unified-shell.rail-collapsed .admin-main-tabbed,.unified-shell.rail-collapsed .settings-main{margin-left:64px;padding:24px 18px 60px}.branding-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.unified-shell .admin-main-tabbed,.unified-shell .settings-main,.unified-shell.rail-collapsed .admin-main-tabbed,.unified-shell.rail-collapsed .settings-main{margin-left:0;padding:20px 14px 84px}.unified-shell .admin-stats{grid-template-columns:1fr 1fr}.unified-shell .admin-title,.unified-shell .settings-main>header{flex-direction:column}.branding-grid{padding:14px}}
 
+/* Tailwind's bare border utility falls back to currentColor; keep every UI stroke on the shared border token. */
+[data-slot="card"],[data-slot="stat-card"],[data-slot="section-card"],[data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"],[data-slot="tabs-list"],[data-slot="dialog-content"],[data-slot="popover-content"],[data-slot="dropdown-menu-content"]{border-color:var(--border)!important}
+[data-slot="button"]{border-color:var(--border)}
+
 /* 2026 dashboard visual system — UI only, no data or state changes */
 html{background:var(--background)}body,button,input,select,textarea{font-family:var(--font-sans)}body{background:var(--background);color:var(--foreground)}
 h1,h2,h3,h4,.ops-welcome h1,.finder-card h2,.settings-main h1,.leader-rank,.leaderboard-list strong{font-family:inherit!important}
