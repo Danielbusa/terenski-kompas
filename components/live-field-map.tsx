@@ -27,7 +27,11 @@ export type VisitMarker = {
 };
 export type TourStop={id:string;date:string;municipality:string;location_name:string;status:string;latitude:number|null;longitude:number|null};
 
-export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask, compact = false }: { tasks: FieldTask[]; visits: VisitMarker[];tourStops?:TourStop[]; onSelectTask: (task: FieldTask) => void; compact?: boolean }) {
+const SERBIA_CENTER: [number, number] = [44.0165, 21.0059];
+const SERBIA_BOUNDS = { south: 41.7, north: 46.3, west: 18.7, east: 23.1 };
+const inSerbia = (latitude: number, longitude: number) => Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= SERBIA_BOUNDS.south && latitude <= SERBIA_BOUNDS.north && longitude >= SERBIA_BOUNDS.west && longitude <= SERBIA_BOUNDS.east;
+
+export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask, compact = false, focus = null }: { tasks: FieldTask[]; visits: VisitMarker[];tourStops?:TourStop[]; onSelectTask: (task: FieldTask) => void; compact?: boolean; focus?: { latitude: number; longitude: number } | null }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<unknown>(null);
   const layerRef = useRef<unknown>(null);
@@ -53,7 +57,7 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask, compac
     let cancelled = false;
     void import("leaflet").then((leaflet) => {
       if (cancelled || !elementRef.current || mapRef.current) return;
-      const map = leaflet.map(elementRef.current, { zoomControl: true }).setView([44.0165, 21.0059], 7);
+      const map = leaflet.map(elementRef.current, { zoomControl: true }).setView(SERBIA_CENTER, 7);
       leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -82,7 +86,7 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask, compac
       const coordinates: [number, number][] = [];
       for (const task of tasks) {
         const point: [number, number] = [Number(task.latitude), Number(task.longitude)];
-        if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+        if (!inSerbia(point[0], point[1])) continue;
         coordinates.push(point);
         const marker = leaflet.marker(point, {
           icon: leaflet.divIcon({
@@ -97,17 +101,19 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask, compac
       }
       for (const visit of visits) {
         const point: [number, number] = [Number(visit.latitude), Number(visit.longitude)];
-        if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+        if (!inSerbia(point[0], point[1])) continue;
         coordinates.push(point);
         leaflet.circleMarker(point, { radius: 6, color: "var(--card)", weight: 2, fillColor: "var(--success)", fillOpacity: .9 })
           .bindTooltip(visit.address || t("Zabeležena poseta", "Recorded visit"))
           .addTo(layer);
       }
-      for(const stop of tourStops){if(stop.latitude==null||stop.longitude==null)continue;const point:[number,number]=[Number(stop.latitude),Number(stop.longitude)];if(!Number.isFinite(point[0])||!Number.isFinite(point[1]))continue;coordinates.push(point);leaflet.marker(point,{icon:leaflet.divIcon({className:"tour-marker-shell",html:`<span class="tour-marker ${stop.status}">★</span>`,iconSize:[34,34],iconAnchor:[17,17]})}).bindTooltip(`${stop.location_name} · ${stop.municipality} · ${stop.date}`).addTo(layer)}
-      if (coordinates.length) map.fitBounds(leaflet.latLngBounds(coordinates), { padding: [38, 38], maxZoom: 15 });
+      for(const stop of tourStops){if(stop.latitude==null||stop.longitude==null)continue;const point:[number,number]=[Number(stop.latitude),Number(stop.longitude)];if(!inSerbia(point[0],point[1]))continue;coordinates.push(point);leaflet.marker(point,{icon:leaflet.divIcon({className:"tour-marker-shell",html:`<span class="tour-marker ${stop.status}">★</span>`,iconSize:[34,34],iconAnchor:[17,17]})}).bindTooltip(`${stop.location_name} · ${stop.municipality} · ${stop.date}`).addTo(layer)}
+      if (focus && inSerbia(Number(focus.latitude), Number(focus.longitude))) map.setView([Number(focus.latitude), Number(focus.longitude)], 16, { animate: true });
+      else if (coordinates.length) map.fitBounds(leaflet.latLngBounds(coordinates), { padding: [38, 38], maxZoom: 13 });
+      else map.setView(SERBIA_CENTER, 7);
     });
     return () => { cancelled = true; };
-  }, [tasks, visits, tourStops, t, mapReady]);
+  }, [tasks, visits, tourStops, focus, t, mapReady]);
 
   const locateUser = () => {
     if (!navigator.geolocation) return;
