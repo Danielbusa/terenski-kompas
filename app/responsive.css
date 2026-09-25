@@ -1,0 +1,246 @@
+.app-mobile-nav {
+  display: none;
+}
+
+@media (min-width: 721px) {
+  .rail-collapsed .ops-rail {
+    display: flex;
+    width: 64px;
+    padding: 14px 10px 16px;
+  }
+
+  .rail-collapsed .ops-rail > nav {
+    display: flex !important;
+    width: 100%;
+    margin: auto;
+    gap: 6px;
+  }
+
+  .rail-collapsed .ops-rail .rail-brand {
+    display: flex;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .rail-collapsed .ops-rail .rail-brand > span:last-child,
+  .rail-collapsed .ops-rail nav span,
+  .rail-collapsed .rail-user,
+  .rail-collapsed .rail-logout,
+  .rail-collapsed .rail-collapse span {
+    display: none;
+  }
+
+  .rail-collapsed .ops-rail nav button,
+  .rail-collapsed .ops-rail nav a {
+    display: flex !important;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0 auto;
+  }
+
+  .rail-collapsed .ops-rail nav svg {
+    display: block;
+    width: 19px;
+    height: 19px;
+  }
+
+  .rail-collapsed .rail-account {
+    display: flex !important;
+    justify-content: center;
+    padding: 6px;
+  }
+
+  .rail-collapsed .rail-collapse {
+    display: grid !important;
+    width: 42px;
+    height: 36px;
+    margin: 0 auto;
+    place-items: center;
+  }
+
+  .rail-collapsed .ops-main,
+  .unified-shell.rail-collapsed .admin-main-tabbed,
+  .unified-shell.rail-collapsed .settings-main {
+    margin-left: 64px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ops-rail {
+    display: none !important;
+  }
+
+  .app-mobile-nav {
+    position: fixed;
+    z-index: 1900;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 72px;
+    display: flex !important;
+    align-items: stretch;
+    gap: 2px;
+    padding: 5px 7px max(5px, env(safe-area-inset-bottom));
+    overflow-x: auto;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--card) 96%, transparent);
+    box-shadow: 0 -8px 24px color-mix(in srgb, var(--sidebar) 8%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .app-mobile-nav a,
+  .app-mobile-nav button {
+    min-width: 64px;
+    flex: 1;
+    border: 0;
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 5px 7px;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 9px;
+    font-weight: 650;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .app-mobile-nav a.active,
+  .app-mobile-nav button.active {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+
+  .app-mobile-nav svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .ops-main,
+  .rail-collapsed .ops-main,
+  .unified-shell .admin-main-tabbed,
+  .unified-shell .settings-main,
+  .unified-shell.rail-collapsed .admin-main-tabbed,
+  .unified-shell.rail-collapsed .settings-main {
+    margin-left: 0;
+  }
+
+  .ops-main,
+  .unified-shell .admin-main-tabbed,
+  .unified-shell .settings-main {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .ops-header {
+    min-height: 64px;
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .ops-brand,
+  .ops-brand > div {
+    min-width: 0;
+  }
+
+  .ops-brand b,
+  .ops-brand small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ops-actions {
+    gap: 5px;
+  }
+
+  .ops-actions .network-state,
+  .ops-actions .top-icon-button,
+  .ops-actions .top-profile {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .ops-actions .network-state {
+    font-size: 0;
+  }
+
+  .ops-content {
+    padding: 16px 13px 88px;
+  }
+
+  .reference-field-layout,
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .visit-entry-card .address-search-row {
+    grid-template-columns: minmax(0, 1fr) 40px 40px;
+  }
+
+  .recent-visits-card,
+  .admin-table-wrap {
+    max-width: calc(100vw - 26px);
+  }
+
+  .recent-visits-table {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .unified-shell .admin-main-tabbed,
+  .unified-shell .settings-main {
+    padding: 18px 13px 88px;
+  }
+
+  .unified-shell .admin-tabs > [data-slot="tabs-list"] {
+    max-width: calc(100vw - 26px);
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .admin-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .admin-filters > .relative {
+    width: 100%;
+  }
+
+  .settings-card form {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .metric-row,
+  .unified-shell .admin-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ops-metric {
+    min-height: 124px;
+  }
+
+  .reference-map-card,
+  .visit-entry-card,
+  .recent-visits-card {
+    border-radius: var(--radius-lg);
+  }
+
+  .live-map-compact .leaflet-map {
+    height: 340px;
+  }
+}

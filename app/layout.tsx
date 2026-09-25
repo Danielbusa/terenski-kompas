@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
+import "./responsive.css";
 import { LanguageProvider } from "@/components/language-provider";
 
 export const metadata: Metadata = {
