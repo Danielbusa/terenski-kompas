@@ -21,12 +21,13 @@ export type VisitMarker = {
   latitude: number;
   longitude: number;
   address: string | null;
+  city_village: string | null;
   status: string;
   completed_at: string;
 };
 export type TourStop={id:string;date:string;municipality:string;location_name:string;status:string;latitude:number|null;longitude:number|null};
 
-export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { tasks: FieldTask[]; visits: VisitMarker[];tourStops?:TourStop[]; onSelectTask: (task: FieldTask) => void }) {
+export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask, compact = false }: { tasks: FieldTask[]; visits: VisitMarker[];tourStops?:TourStop[]; onSelectTask: (task: FieldTask) => void; compact?: boolean }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<unknown>(null);
   const layerRef = useRef<unknown>(null);
@@ -126,8 +127,9 @@ export function LiveFieldMap({ tasks, visits, tourStops=[], onSelectTask }: { ta
     }, () => setLocating(false), { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 });
   };
 
-  return <section className="live-map-card">
-    <div className="live-map-toolbar"><span className={offline ? "offline" : "online"}>{offline ? <WifiOff /> : <MapPin />}{offline ? t("Selo režim · keširana mapa", "Village mode · cached map") : t("OpenStreetMap · uživo", "OpenStreetMap · live")}</span><button type="button" className="locate-button" onClick={locateUser} disabled={locating}>{locating ? <LoaderCircle className="spin" /> : <LocateFixed />}{t("Trenutna lokacija", "Current location")}</button></div>
+  return <section className={`live-map-card ${compact ? "live-map-compact" : ""}`}>
+    {!compact && <div className="live-map-toolbar"><span className={offline ? "offline" : "online"}>{offline ? <WifiOff /> : <MapPin />}{offline ? t("Selo režim · keširana mapa", "Village mode · cached map") : t("OpenStreetMap · uživo", "OpenStreetMap · live")}</span><button type="button" className="locate-button" onClick={locateUser} disabled={locating}>{locating ? <LoaderCircle className="spin" /> : <LocateFixed />}{t("Trenutna lokacija", "Current location")}</button></div>}
+    {compact && <button type="button" className="map-float-locate" onClick={locateUser} disabled={locating} aria-label={t("Trenutna lokacija", "Current location")}>{locating ? <LoaderCircle className="spin" /> : <LocateFixed />}</button>}
     <div ref={elementRef} className="leaflet-map" aria-label={t("Mapa terenskih zadataka", "Field task map")} />
     {selected && <div className="map-task-card"><div><small>{selected.city_village}</small><h3>{selected.title}</h3><p>{selected.address}</p></div><div><button type="button" onClick={() => onSelectTask(selected)}>{t("Zabeleži posetu", "Log visit")}</button><a href={`https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=;${selected.latitude},${selected.longitude}`} target="_blank" rel="noreferrer"><Navigation /> {t("Ruta", "Route")}</a></div></div>}
   </section>;

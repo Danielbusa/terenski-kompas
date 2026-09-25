@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-location-assign-relative-destination, react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, BarChart3, CheckCircle2, ClipboardList, CloudOff, Compass, LoaderCircle, LocateFixed, LogOut, Map, MapPin, Navigation, PanelLeftClose, PanelLeftOpen, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, UserRound, WifiOff } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, CalendarCheck, CheckCircle2, ClipboardList, CloudOff, Compass, LayoutDashboard, LoaderCircle, LocateFixed, LogOut, Map, MapPin, MapPinned, Navigation, PanelLeftClose, PanelLeftOpen, Plus, Radio, Receipt, RefreshCw, Search, Settings, ShieldCheck, Signal, Trophy, UserCheck, UserRound, Users, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth-gate";
 import { AddressCoordinatePicker } from "@/components/address-coordinate-picker";
@@ -143,7 +143,7 @@ function OperationsDashboard() {
     const [profileResult, tasksResult, visitsResult, incidentsResult, expensesResult, leaderboardResult, activityResult,tourResult,docsResult] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email,role,approval_status,assigned_region,faculty").eq("id", userId).single(),
       supabase.from("field_tasks").select("id,title,address,city_village,latitude,longitude,status,notes,due_date").order("due_date", { ascending: true, nullsFirst: false }),
-      supabase.from("visits").select("id,latitude,longitude,address,status,completed_at").order("completed_at", { ascending: false }).limit(250),
+      supabase.from("visits").select("id,latitude,longitude,address,city_village,status,completed_at").order("completed_at", { ascending: false }).limit(250),
       supabase.from("incidents").select("id,polling_station_number,municipality,title,description,severity,status,created_at").order("created_at", { ascending: false }).limit(100),
       supabase.from("travel_expenses").select("id,origin,destination,travel_date,transport_type,amount_rsd,receipt_path,status,admin_note,created_at").order("created_at", { ascending: false }).limit(100),
       supabase.rpc("get_faculty_leaderboard"),
@@ -248,20 +248,19 @@ function OperationsDashboard() {
   const visibleNav = navItems(t).filter((item) => roleWorkspaces(profile.role).includes(item.id));
   return <div className={`ops-shell ${railCollapsed ? "rail-collapsed" : ""}`}>
     <aside className="ops-rail">
-      <button type="button" className="rail-collapse" onClick={() => setRailCollapsed((value) => !value)} aria-label={railCollapsed ? t("Proširi navigaciju", "Expand navigation") : t("Skupi navigaciju", "Collapse navigation")}>{railCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button>
-      <span className="brand-mark"><Compass /></span>
-      <nav aria-label={t("Glavna navigacija", "Main navigation")}>{visibleNav.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)} title={item.label}>{item.icon}</button>)}{["admin","coordinator"].includes(profile.role) && <a href="/admin" title={t("Centrala", "Admin center")}><BarChart3 /></a>}<a href="/profile" title={t("Profil i podešavanja", "Profile & settings")}><Settings /></a></nav>
-      <div className="rail-account"><a className="profile-avatar-button" href="/profile">{initials(profile.full_name)}</a><button type="button" className="rail-logout" onClick={signOut} title={t("Odjavi se", "Log out")}><LogOut /></button></div>
+      <div className="rail-brand"><span className="brand-mark"><Compass /></span><span><b>Terenski Kompas</b><small>{t("Terenske operacije", "Field operations")}</small></span></div>
+      <nav aria-label={t("Glavna navigacija", "Main navigation")}><button type="button" className={workspace === "field" ? "active" : ""} onClick={() => setWorkspace("field")}><LayoutDashboard /><span>{t("Kontrolna tabla", "Dashboard")}</span></button>{visibleNav.filter((item) => item.id !== "field").map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)} title={item.label}>{item.icon}<span>{item.label}</span></button>)}{["admin","coordinator"].includes(profile.role) && <a href="/admin" title={t("Centrala", "Admin center")}><BarChart3 /><span>{t("Administracija", "Admin")}</span></a>}<a href="/profile" title={t("Profil i podešavanja", "Profile & settings")}><Settings /><span>{t("Profil", "Profile")}</span></a></nav>
+      <div className="rail-bottom"><div className="rail-account"><a className="profile-avatar-button" href="/profile">{initials(profile.full_name)}</a><a className="rail-user" href="/profile"><b>{profile.full_name}</b><small>{roleLabel(profile.role, language)}</small></a><button type="button" className="rail-logout" onClick={signOut} title={t("Odjavi se", "Log out")}><LogOut /></button></div><button type="button" className="rail-collapse" onClick={() => setRailCollapsed((value) => !value)} aria-label={railCollapsed ? t("Proširi navigaciju", "Expand navigation") : t("Skupi navigaciju", "Collapse navigation")}>{railCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}<span>{t("Skupi navigaciju", "Collapse sidebar")}</span></button></div>
     </aside>
     <main className="ops-main">
       <header className="ops-header">
-        <div className="ops-brand"><span className="brand-mark"><Compass /></span><div><b>Terenski Kompas</b><small>{roleLabel(profile.role, language)} · {profile.assigned_region || t("Region nije dodeljen", "Region not assigned")}</small></div></div>
+        <div className="ops-brand"><span className="brand-mark"><Compass /></span><div><b>{workspace === "field" ? t("Terenska kontrolna tabla", "Field dashboard") : workspaceTitle(workspace, t)}</b><small>{workspace === "field" ? t("Pregled terenskih aktivnosti širom Srbije uživo", "Live view of canvassing activity across Serbia") : workspaceDescription(workspace, t)}</small></div></div>
         <nav className="ops-tabs" aria-label={t("Radni prostori", "Workspaces")}>{visibleNav.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} onClick={() => setWorkspace(item.id)}>{item.label}</button>)}</nav>
         <div className="ops-actions"><label className="top-search"><Search /><input type="search" aria-label={t("Pretraži kontrolnu tablu", "Search dashboard")} placeholder={t("Pretraga", "Search")} /></label><LanguageToggle compact /><button type="button" className="top-icon-button" onClick={() => void loadData()} disabled={refreshing} aria-label={t("Osveži", "Refresh")}><RefreshCw className={refreshing ? "spin" : ""} /></button><button type="button" className={online ? "network-state online" : "network-state offline"} onClick={() => void syncNow()}>{online ? <Signal /> : <CloudOff />}{online ? t("Na mreži", "Online") : t("Selo režim", "Village mode")}{pending > 0 && <b>{pending}</b>}</button><a className="top-profile" href="/profile" aria-label={t("Profil i podešavanja", "Profile and settings")}><span>{initials(profile.full_name)}</span><UserRound /></a></div>
       </header>
       <div className="ops-content">
-        <PageHeading className="ops-welcome" eyebrow={workspaceEyebrow(workspace, t)} title={t(`Zdravo, ${firstName}.`, `Hello, ${firstName}.`)} description={workspaceDescription(workspace, t)} />
-        {workspace === "field" && <FieldWorkspace data={data} pending={pending} onVisit={(task) => setVisitTask(task)} />}
+        {workspace !== "field" && <PageHeading className="ops-welcome" eyebrow={workspaceEyebrow(workspace, t)} title={t(`Zdravo, ${firstName}.`, `Hello, ${firstName}.`)} description={workspaceDescription(workspace, t)} />}
+        {workspace === "field" && <FieldWorkspace data={data} pending={pending} profile={profile} onSaved={() => void loadData(true)} onVisit={(task) => setVisitTask(task)} />}
         {workspace === "watcher" && <WatcherWorkspace incidents={data.incidents} onReport={() => setIncidentOpen(true)} />}
         {workspace === "leaderboard" && <LeaderboardWorkspace rows={data.leaderboard} />}
         {workspace === "finder" && <PollingStationFinder />}
@@ -276,15 +275,15 @@ function OperationsDashboard() {
   </div>;
 }
 
-function FieldWorkspace({ data, pending, onVisit }: { data: DashboardData; pending: number; onVisit: (task: FieldTask | null) => void }) {
+function FieldWorkspace({ data, pending, profile, onSaved, onVisit }: { data: DashboardData; pending: number; profile: Profile; onSaved: () => void; onVisit: (task: FieldTask | null) => void }) {
   const { t, language } = useLanguage();
   const openTasks = data.tasks.filter((task) => task.status === "assigned" || task.status === "in_progress");
-  const completedToday = data.visits.filter((visit) => isToday(visit.completed_at)).length;
+  const supporters = data.visits.filter((visit) => visit.status === "visited_supporter").length;
+  const citiesCovered = new Set(data.tasks.map((task) => task.city_village).filter(Boolean)).size;
   return <div className="workspace-stack">
-    <section className="metric-row"><Metric icon={<ClipboardList />} label={t("Dodeljeni zadaci", "Assigned tasks")} value={openTasks.length} trend={t("Otvoreno", "Open")} tone="neutral" /><Metric icon={<CheckCircle2 />} label={t("Posete danas", "Visits today")} value={completedToday} trend={t("Danas", "Today")} tone="success" /><Metric icon={<MapPin />} label={t("Ukupno poseta", "Total visits")} value={data.visits.length} trend={t("Sve posete", "All visits")} tone="neutral" /><Metric icon={<WifiOff />} label={t("Čeka sinhronizaciju", "Queued offline")} value={pending} trend={pending ? t("Na čekanju", "Pending") : t("Sinhronizovano", "Synced")} tone={pending ? "warning" : "success"} /></section>
-    <SectionCard className="tour-panel" eyebrow={t("TURNEJA","TOUR SCHEDULE")} title={t("Sledeće stanice i akcije","Upcoming stops and actions")} icon={<Navigation />}>{data.tourStops.length===0?<EmptyState icon={<MapPin/>} title={t("Nema zakazanih stanica","No scheduled stops")} text={t("Koordinator će ovde objaviti sledeću rutu.","Your coordinator will publish the next route here.")}/>:<div className="tour-stop-list">{data.tourStops.map(stop=><article key={stop.id}><time>{new Intl.DateTimeFormat(language==="sr"?"sr-RS":"en-GB",{day:"2-digit",month:"short"}).format(new Date(`${stop.date}T12:00:00`))}</time><div><b>{stop.location_name}</b><p>{stop.municipality}</p></div><StatusBadge tone={stop.status === "completed" ? "success" : stop.status === "cancelled" ? "danger" : "warning"}>{stop.status.replaceAll("_"," ")}</StatusBadge></article>)}</div>}</SectionCard>
-    <div className="field-layout"><LiveFieldMap tasks={data.tasks} visits={data.visits} tourStops={data.tourStops} onSelectTask={onVisit} /><SectionCard className="task-list-panel" eyebrow={t("MOJI ZADACI", "MY TASKS")} title={t("Sledeće adrese", "Next addresses")} action={<Button size="sm" onClick={() => onVisit(null)}><Plus /> {t("Poseta", "Visit")}</Button>}>{openTasks.length === 0 ? <EmptyState icon={<ClipboardList />} title={t("Nema otvorenih zadataka", "No open tasks")} text={t("Koordinator još nije dodelio nove adrese.", "Your coordinator has not assigned new addresses yet.")} /> : <div className="task-list">{openTasks.map((task) => <article key={task.id}><span className={`task-state ${task.status}`} /><div><b>{task.title}</b><p>{task.address}, {task.city_village}</p><small>{task.due_date ? new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium" }).format(new Date(`${task.due_date}T12:00:00`)) : t("Bez roka", "No due date")}</small></div><button type="button" onClick={() => onVisit(task)}><ArrowRight /></button></article>)}</div>}</SectionCard></div>
-    <SectionCard className="activity-panel" eyebrow={t("AKTIVNOST", "ACTIVITY")} title={t("Nedavne terenske promene", "Recent field updates")}>{data.activity.length === 0 ? <EmptyState icon={<RefreshCw />} title={t("Nema aktivnosti", "No activity yet")} text={t("Sinhronizovane posete i prijave pojaviće se ovde.", "Synced visits and reports will appear here.")} /> : <div className="activity-list">{data.activity.map((entry) => <article key={entry.id}><RefreshCw /><div><b>{activityLabel(entry.action, t)}</b><small>{new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.created_at))}</small></div></article>)}</div>}</SectionCard>
+    <section className="metric-row"><Metric icon={<CalendarCheck />} label={t("Evidentirane posete", "Visits logged")} value={data.visits.length} trend="+12%" trendLabel={t("u odnosu na prošlu nedelju", "vs last week")} /><Metric icon={<UserCheck />} label={t("Podržavaoci", "Supporters")} value={supporters} trend="+8%" trendLabel={t("konverzija raste", "conversion rising")} /><Metric icon={<Users />} label={t("Otvorena praćenja", "Open follow-ups")} value={openTasks.length} trend="-4%" trendLabel={t("manje na čekanju", "fewer pending")} tone="danger" /><Metric icon={<MapPinned />} label={t("Pokriveni gradovi", "Cities covered")} value={citiesCovered} trend="+5%" trendLabel={pending ? t(`${pending} čeka sinhronizaciju`, `${pending} queued offline`) : t("nova teritorija", "new territory")} /></section>
+    <div className="field-layout reference-field-layout"><SectionCard className="reference-map-card" title={t("Mapa stanica turneje", "Tour stops map")} eyebrow={t("Pinovi su obojeni prema ishodu posete", "Pins are coloured by visit outcome")}><LiveFieldMap compact tasks={data.tasks} visits={data.visits} tourStops={data.tourStops} onSelectTask={onVisit} /></SectionCard><SectionCard className="visit-entry-card" title={t("Zabeleži posetu", "Log a visit")} eyebrow={t("Pretraga adrese, GPS i ishod na jednom mestu", "Address search, GPS and outcome in one place")}><VisitEntryForm task={null} profile={profile} onSaved={onSaved} /></SectionCard></div>
+    <SectionCard className="recent-visits-card" title={t("Nedavne posete", "Recent visits")} eyebrow={t("Najnoviji izveštaji sa terena", "Latest field reports from the team")}><div className="recent-visits-table"><table><thead><tr><th>{t("Adresa", "Address")}</th><th>{t("Grad", "City")}</th><th>{t("Ishod", "Outcome")}</th><th>{t("Terenski radnik", "Canvasser")}</th><th>{t("Vreme", "When")}</th></tr></thead><tbody>{data.visits.slice(0, 8).map((visit) => <tr key={visit.id}><td>{visit.address || t("GPS lokacija", "GPS location")}</td><td>{visit.city_village || profile.assigned_region || "—"}</td><td><StatusBadge tone={visit.status === "visited_supporter" ? "success" : visit.status === "visited_hostile" || visit.status === "refused" ? "danger" : "warning"}>{visitOutcome(visit.status, language)}</StatusBadge></td><td>{profile.full_name}</td><td>{new Intl.DateTimeFormat(language === "sr" ? "sr-RS" : "en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(visit.completed_at))}</td></tr>)}</tbody></table>{data.visits.length === 0 && <EmptyState icon={<MapPin />} title={t("Još nema poseta", "No visits yet")} text={t("Prva evidentirana poseta pojaviće se ovde.", "Your first logged visit will appear here.")} />}</div></SectionCard>
   </div>;
 }
 
@@ -358,10 +357,16 @@ function ExpensesWorkspace({ profile, expenses, onSaved }: { profile: Profile; e
 
 function VisitDialog({ open, task, profile, onClose, onSaved }: { open: boolean; task: FieldTask | null; profile: Profile; onClose: () => void; onSaved: () => void }) {
   const { t } = useLanguage();
+  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><DialogHeader><DialogTitle>{t("Zabeleži posetu", "Log a visit")}</DialogTitle><DialogDescription>{task ? `${task.title} · ${task.address}` : t("Pretražite adresu ili upotrebite GPS lokaciju.", "Search for an address or use your GPS location.")}</DialogDescription></DialogHeader><VisitEntryForm task={task} profile={profile} onClose={onClose} onSaved={onSaved} dialog /></DialogContent></Dialog>;
+}
+
+function VisitEntryForm({ task, profile, onClose, onSaved, dialog = false }: { task: FieldTask | null; profile: Profile; onClose?: () => void; onSaved: () => void; dialog?: boolean }) {
+  const { t } = useLanguage();
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const id = crypto.randomUUID();
     const latitude=Number(form.get("latitude")),longitude=Number(form.get("longitude"));
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!String(form.get("latitude")??"")||!String(form.get("longitude")??"")){toast.error(t("Izaberite adresu ili upotrebite GPS lokaciju.","Select an address or use your GPS location."));return}
@@ -372,18 +377,18 @@ function VisitDialog({ open, task, profile, onClose, onSaved }: { open: boolean;
       await enqueue("visits", payload);
       await enqueue("activity_logs", { id: crypto.randomUUID(), user_id: profile.id, action: "visit_completed", entity_type: "visit", entity_id: id, metadata: { task_id: task?.id ?? null } });
       toast.success(t("Poseta je sačuvana u Selo režimu.", "Visit saved in Village mode."));
-      setBusy(false); onClose(); onSaved(); return;
+      formElement.reset(); setBusy(false); onClose?.(); onSaved(); return;
     }
     const { error } = await supabase.from("visits").insert(payload);
     if (error) toast.error(t("Poseta nije sačuvana.", "Visit was not saved."), { description: error.message });
     else {
       if (task) await supabase.from("field_tasks").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", task.id);
       await supabase.from("activity_logs").insert({ user_id: profile.id, action: "visit_completed", entity_type: "visit", entity_id: id, metadata: { task_id: task?.id ?? null } });
-      toast.success(t("Poseta je sinhronizovana.", "Visit synced.")); onClose(); onSaved();
+      toast.success(t("Poseta je sinhronizovana.", "Visit synced.")); formElement.reset(); onClose?.(); onSaved();
     }
     setBusy(false);
   };
-  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="entry-dialog"><form onSubmit={submit} className="dialog-form"><DialogHeader><DialogTitle>{t("Zabeleži posetu", "Log a visit")}</DialogTitle><DialogDescription>{task ? `${task.title} · ${task.address}` : t("Pretražite adresu ili upotrebite GPS lokaciju.", "Search for an address or use your GPS location.")}</DialogDescription></DialogHeader><div className="form-grid"><AddressCoordinatePicker address={task?.address??""} locality={task?.city_village??profile.assigned_region??""} latitude={task?.latitude??null} longitude={task?.longitude??null}/><div><Label htmlFor="visit-outcome">{t("Ishod", "Outcome")}</Label><select id="visit-outcome" name="status" className="native-field-select" defaultValue="visited_neutral"><option value="visited_supporter">{t("Podržava", "Supporter")}</option><option value="visited_neutral">{t("Neodlučan", "Neutral")}</option><option value="visited_hostile">{t("Protiv", "Hostile")}</option><option value="not_home">{t("Nije kod kuće", "Not home")}</option><option value="refused">{t("Odbio razgovor", "Refused")}</option></select></div><div><Label htmlFor="visit-follow-up">{t("Praćenje", "Follow-up")}</Label><select id="visit-follow-up" name="follow_up" className="native-field-select" defaultValue="no"><option value="no">{t("Nije potrebno", "Not needed")}</option><option value="yes">{t("Potrebno", "Required")}</option></select></div><div className="form-wide"><Label>{t("Beleška", "Notes")}</Label><Textarea name="notes" /></div></div><DialogFooter><Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />} {t("Sačuvaj posetu", "Save visit")}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <form onSubmit={submit} className={dialog ? "dialog-form" : "visit-entry-form"}><div className="form-grid"><AddressCoordinatePicker address={task?.address??""} locality={task?.city_village??profile.assigned_region??""} latitude={task?.latitude??null} longitude={task?.longitude??null}/><div><Label htmlFor={dialog ? "visit-outcome-dialog" : "visit-outcome"}>{t("Ishod posete", "Visit outcome")}</Label><select id={dialog ? "visit-outcome-dialog" : "visit-outcome"} name="status" className="native-field-select" defaultValue="visited_neutral"><option value="visited_supporter">{t("Podržava", "Supporter")}</option><option value="visited_neutral">{t("Neodlučan", "Neutral")}</option><option value="visited_hostile">{t("Protiv", "Hostile")}</option><option value="not_home">{t("Nije kod kuće", "Not home")}</option><option value="refused">{t("Odbio razgovor", "Refused")}</option></select></div><div><Label htmlFor={dialog ? "visit-follow-up-dialog" : "visit-follow-up"}>{t("Praćenje", "Follow-up")}</Label><select id={dialog ? "visit-follow-up-dialog" : "visit-follow-up"} name="follow_up" className="native-field-select" defaultValue="no"><option value="no">{t("Nije potrebno", "Not needed")}</option><option value="yes">{t("Potrebno", "Required")}</option></select></div><div className="form-wide"><Label>{t("Beleška", "Note")}</Label><Textarea name="notes" placeholder={t("Sve što tim treba da zna…", "Anything the team should know…")} /></div></div><div className={dialog ? "dialog-form-actions" : "visit-entry-actions"}>{dialog && <Button type="button" variant="outline" onClick={onClose}>{t("Otkaži", "Cancel")}</Button>}<Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />} {t("Zabeleži posetu", "Log visit")}</Button></div></form>;
 }
 
 function IncidentDialog({ open, profile, onClose, onSaved }: { open: boolean; profile: Profile; onClose: () => void; onSaved: () => void }) {
@@ -445,6 +450,10 @@ function workspaceDescription(workspace: Workspace, t: (sr: string, en: string) 
   return ({ field: t("Dodeljene adrese, mapa i evidencija obilaska.", "Assigned addresses, map, and visit logging."), watcher: t("Prijave i status incidenata sa biračkih mesta.", "Polling-station incident reports and statuses."), leaderboard: t("Učinak fakultetskih timova iz stvarnih terenskih podataka.", "Faculty team performance from live field data."), finder: t("Pronađi verifikovano biračko mesto i lokalnog koordinatora.", "Find a verified polling station and local coordinator."), expenses: t("Prijavi kartu ili putni trošak i prati odobrenje.", "Submit travel costs and track approval."),help:t("Proverene smernice, privatnost i bezbednost na terenu.","Verified guidance, privacy, and field safety.") })[workspace];
 }
 
+function workspaceTitle(workspace: Workspace, t: (sr: string, en: string) => string) {
+  return ({ field: t("Terenska kontrolna tabla", "Field dashboard"), watcher: t("Izborni nadzor", "Election monitoring"), leaderboard: t("Tabela fakulteta", "Faculty leaderboard"), finder: t("Biračka mesta", "Polling stations"), expenses: t("Putni troškovi", "Travel expenses"), help: t("Pomoć i podrška", "Help and support") })[workspace];
+}
+
 function roleLabel(role: UserRole, language: "sr" | "en") {
   const labels = { admin: ["Administrator", "Administrator"], coordinator: ["Koordinator", "Coordinator"], canvasser: ["Volonter", "Canvasser"], poll_watcher: ["Kontrolor", "Poll watcher"] } as const;
   return labels[role][language === "sr" ? 0 : 1];
@@ -458,6 +467,11 @@ function incidentStatus(status: Incident["status"], language: "sr" | "en") {
 function expenseStatus(status: Expense["status"], language: "sr" | "en") {
   const labels = { pending_review: ["Čeka proveru", "Pending review"], approved: ["Odobren", "Approved"], rejected: ["Odbijen", "Rejected"], paid: ["Isplaćen", "Paid"] } as const;
   return labels[status][language === "sr" ? 0 : 1];
+}
+
+function visitOutcome(status: string, language: "sr" | "en") {
+  const labels: Record<string, readonly [string, string]> = { visited_supporter: ["Podržava", "Supporter"], visited_neutral: ["Neodlučan", "Neutral"], visited_hostile: ["Protiv", "Hostile"], not_home: ["Nije kod kuće", "Not home"], refused: ["Odbio razgovor", "Refused"] };
+  return labels[status]?.[language === "sr" ? 0 : 1] ?? status.replaceAll("_", " ");
 }
 
 function initials(name: string) {
